@@ -1,0 +1,12 @@
+{
+  "name": "claude-env",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "claude-env": "bin/claude-env"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

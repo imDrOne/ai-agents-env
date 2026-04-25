@@ -1,0 +1,12 @@
+{
+  "name": "agent-env-dashboard",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "agent-env-dashboard": "bin/agent-env-dashboard"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

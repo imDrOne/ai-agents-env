@@ -1,0 +1,18 @@
+{
+  "name": "agent-env-suite",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Independent Claude/Codex environment utilities with an optional dashboard facade",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "check": "node --check packages/shared/src/*.js packages/claude-env/src/*.js packages/codex-env/src/*.js packages/dashboard/src/*.js packages/claude-env/bin/claude-env packages/codex-env/bin/codex-env packages/dashboard/bin/agent-env-dashboard",
+    "test": "npm run check && node --test tests/*.test.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "UNLICENSED"
+}

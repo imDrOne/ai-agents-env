@@ -1,0 +1,12 @@
+{
+  "name": "codex-env",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "codex-env": "bin/codex-env"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

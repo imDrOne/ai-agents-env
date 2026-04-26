@@ -21,6 +21,10 @@ export function readClaudePluginManifest({
 
 export function createClaudePluginPlan(options = {}) {
   const manifest = readClaudePluginManifest(options);
+  const pluginFilter = options.onlyPlugins ? new Set(options.onlyPlugins) : null;
+  const plugins = pluginFilter
+    ? manifest.plugins.filter(plugin => pluginFilter.has(plugin))
+    : manifest.plugins;
   return {
     marketplacesFile: options.marketplacesFile ?? DEFAULT_MARKETPLACES_FILE,
     pluginsFile: options.pluginsFile ?? DEFAULT_PLUGINS_FILE,
@@ -30,7 +34,7 @@ export function createClaudePluginPlan(options = {}) {
         name: marketplace.name,
         repo: marketplace.repo,
       })),
-      ...manifest.plugins.map(plugin => ({
+      ...plugins.map(plugin => ({
         kind: 'installPlugin',
         plugin,
         scope: 'user',
@@ -42,11 +46,12 @@ export function createClaudePluginPlan(options = {}) {
 export function installClaudePlugins({
   marketplacesFile = DEFAULT_MARKETPLACES_FILE,
   pluginsFile = DEFAULT_PLUGINS_FILE,
+  onlyPlugins,
   dryRun = false,
   spawnSyncImpl = spawnSync,
   io = defaultIo(),
 } = {}) {
-  const plan = createClaudePluginPlan({ marketplacesFile, pluginsFile });
+  const plan = createClaudePluginPlan({ marketplacesFile, pluginsFile, onlyPlugins });
   const summary = {
     ok: true,
     dryRun,

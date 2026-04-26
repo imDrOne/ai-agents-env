@@ -1,12 +1,17 @@
-import { notifyMain, runAgentCli } from '../../shared/src/index.js';
+import { notifyMain, runAgentCli, runCacCommand } from '../../shared/src/index.js';
 import { skillsCommand } from './skills.js';
+import { setupCommand } from './setup.js';
 
 export async function main(argv, io) {
-  if (argv[0] === 'skills') {
-    return skillsCommand(argv.slice(1), io);
-  }
-  if (argv[0] === 'notify') {
-    return notifyMain(argv.slice(1), io?.notifyDeps);
-  }
-  return runAgentCli('codex', argv, io);
+  return runCacCommand(
+    'codex-env',
+    argv,
+    (cli, run) => {
+      cli.command('setup', 'Interactive Codex setup').action(run(() => setupCommand(io)));
+      cli.command('skills', 'Manage Codex skills').allowUnknownOptions().action(run(() => skillsCommand(argv.slice(1), io)));
+      cli.command('notify', 'Handle Codex notification payload').allowUnknownOptions().action(run(() => notifyMain(argv.slice(1), io?.notifyDeps)));
+      cli.command('[...args]', 'Run shared Codex commands').allowUnknownOptions().action(run(() => runAgentCli('codex', argv, io)));
+    },
+    io,
+  );
 }

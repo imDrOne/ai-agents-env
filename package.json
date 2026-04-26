@@ -14,5 +14,9 @@
   "engines": {
     "node": ">=18"
   },
-  "license": "UNLICENSED"
+  "license": "UNLICENSED",
+  "dependencies": {
+    "@clack/prompts": "^1.2.0",
+    "cac": "^6.7.14"
+  }
 }

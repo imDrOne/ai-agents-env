@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import { runCacCommand } from '../../shared/src/index.js';
 
 const KNOWN_ADAPTERS = Object.freeze([
   { id: 'claude', displayName: 'Claude Code', command: 'claude-env' },
@@ -6,35 +7,38 @@ const KNOWN_ADAPTERS = Object.freeze([
 ]);
 
 export async function main(argv, io = defaultIo()) {
-  const [command = 'help'] = argv;
-  if (command === 'status' || command === 'adapters') {
-    io.out(JSON.stringify({ adapters: discoverAdapters() }, null, 2));
-    return 0;
-  }
-  if (command === 'install') {
-    io.out('agent-env-dashboard is facade-only. It does not install Claude, Codex, or Serena.');
-    return 0;
-  }
-  if (command === 'ui') {
-    io.out('Dashboard UI server is not implemented in this slice. Adapter discovery is available via `agent-env-dashboard status`.');
-    return 0;
-  }
-  if (command === 'help' || command === '--help' || command === '-h') {
-    io.out(
-      [
-        'Usage: agent-env-dashboard <command>',
-        '',
-        'Commands:',
-        '  agent-env-dashboard install',
-        '  agent-env-dashboard status',
-        '  agent-env-dashboard adapters',
-        '  agent-env-dashboard ui',
-      ].join('\n'),
-    );
-    return 0;
-  }
-  io.err(`Unknown command: ${command}`);
-  return 64;
+  return runCacCommand(
+    'agent-env-dashboard',
+    argv,
+    (cli, run) => {
+      cli.command('status', 'Show adapter status').action(run(() => showAdapters(io)));
+      cli.command('adapters', 'List adapters').action(run(() => showAdapters(io)));
+      cli.command('install', 'Install dashboard facade').action(run(() => installCommand(io)));
+      cli.command('setup', 'Configure dashboard facade').action(run(() => setupCommand(io)));
+      cli.command('ui', 'Start dashboard UI').action(run(() => uiCommand(io)));
+    },
+    io,
+  );
+}
+
+function showAdapters(io) {
+  io.out(JSON.stringify({ adapters: discoverAdapters() }, null, 2));
+  return 0;
+}
+
+function installCommand(io) {
+  io.out('agent-env-dashboard is facade-only. It does not install Claude, Codex, or Serena.');
+  return 0;
+}
+
+function setupCommand(io) {
+  io.out('agent-env-dashboard setup is facade-only. Install Claude/Codex separately, then run agent-env-dashboard ui.');
+  return 0;
+}
+
+function uiCommand(io) {
+  io.out('Dashboard UI server is not implemented in this slice. Adapter discovery is available via `agent-env-dashboard status`.');
+  return 0;
 }
 
 export function discoverAdapters() {

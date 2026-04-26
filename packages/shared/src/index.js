@@ -13,6 +13,7 @@ export {
   readProjectProfile,
 } from './project-env.js';
 export { runAgentCli } from './agent-cli.js';
+export { runCacCommand } from './cli-router.js';
 export {
   classifyNotification,
   getSoundFiles,

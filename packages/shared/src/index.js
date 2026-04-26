@@ -13,4 +13,13 @@ export {
   readProjectProfile,
 } from './project-env.js';
 export { runAgentCli } from './agent-cli.js';
+export {
+  classifyNotification,
+  getSoundFiles,
+  getSoundsDir,
+  notifyMain,
+  playSound,
+  playSoundFile,
+  resolveSoundPool,
+} from './notify.js';
 export { configDir, homePath, lstatSafe, writeFileIfChanged, writeJsonFile } from './platform.js';

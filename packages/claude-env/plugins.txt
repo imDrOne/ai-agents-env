@@ -1,0 +1,8 @@
+# Claude Code plugins — one per line: <plugin>@<marketplace>
+
+frontend-design@claude-plugins-official
+playwright@claude-plugins-official
+superpowers@claude-plugins-official
+plannotator@plannotator
+caveman@caveman
+warp@claude-code-warp

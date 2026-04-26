@@ -1,0 +1,5 @@
+# Codex skills sourced from an existing Claude Code plugin cache.
+# Format: <destination|*> <marketplace>/<plugin> <source-skill|*>
+
+* claude-plugins-official/superpowers *
+caveman caveman/caveman caveman

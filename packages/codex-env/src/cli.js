@@ -1,5 +1,12 @@
-import { runAgentCli } from '../../shared/src/index.js';
+import { notifyMain, runAgentCli } from '../../shared/src/index.js';
+import { skillsCommand } from './skills.js';
 
-export function main(argv, io) {
+export async function main(argv, io) {
+  if (argv[0] === 'skills') {
+    return skillsCommand(argv.slice(1), io);
+  }
+  if (argv[0] === 'notify') {
+    return notifyMain(argv.slice(1), io?.notifyDeps);
+  }
   return runAgentCli('codex', argv, io);
 }

@@ -1,0 +1,7 @@
+# Claude Code plugin marketplaces — one per line: <name> <github-owner/repo>
+# Name is the marketplace id used in: claude plugin install plugin@<name>
+
+claude-plugins-official anthropics/claude-plugins-official
+caveman JuliusBrussee/caveman
+claude-code-warp warpdotdev/claude-code-warp
+plannotator backnotprop/plannotator

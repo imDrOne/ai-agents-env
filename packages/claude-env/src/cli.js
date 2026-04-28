@@ -1,4 +1,4 @@
-import { notifyMain, runAgentCli, runCacCommand } from '../../shared/src/index.js';
+import { notifyMain, readAgentConfig, runAgentCli, runCacCommand } from '../../shared/src/index.js';
 import { installClaudePlugins, pluginCommand } from './plugins.js';
 import { setupCommand } from './setup.js';
 
@@ -9,7 +9,10 @@ export async function main(argv, io) {
     (cli, run) => {
       cli.command('setup', 'Interactive Claude setup').action(run(() => setupCommand(io)));
       cli.command('plugins', 'Manage Claude plugins').allowUnknownOptions().action(run(() => pluginCommand(argv.slice(1), io)));
-      cli.command('notify', 'Handle Claude notification payload').allowUnknownOptions().action(run(() => notifyMain(argv.slice(1), io?.notifyDeps)));
+      cli.command('notify', 'Handle Claude notification payload').allowUnknownOptions().action(run(() => notifyMain(argv.slice(1), {
+        readConfig: () => readAgentConfig('claude', { env: io?.env }),
+        ...(io?.notifyDeps ?? {}),
+      })));
       cli.command('install', 'Install Claude environment').allowUnknownOptions().action(run(() => installCommand(argv.slice(1), io)));
       cli.command('[...args]', 'Run shared Claude commands').allowUnknownOptions().action(run(() => runAgentCli('claude', argv, io)));
     },

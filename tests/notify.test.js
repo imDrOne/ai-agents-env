@@ -9,6 +9,11 @@ import {
   notifyMain,
   resolveSoundPool,
 } from '../packages/shared/src/notify.js';
+import {
+  addSoundsToLibrary,
+  readAgentConfig,
+  writeAgentConfig,
+} from '../packages/shared/src/index.js';
 import { main as claudeMain } from '../packages/claude-env/src/cli.js';
 import { main as codexMain } from '../packages/codex-env/src/cli.js';
 
@@ -77,6 +82,140 @@ test('resolveSoundPool uses per-event config before fallback pool', () => {
     resolveSoundPool('agent_turn_complete', cfg, dir).map(file => file.name).sort(),
     ['attention.mp3', 'done.wav'],
   );
+});
+
+test('addSoundsToLibrary copies supported sounds and renames conflicts', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-sound-add-'));
+  const soundsDir = path.join(root, 'library');
+  fs.mkdirSync(soundsDir, { recursive: true });
+  fs.writeFileSync(path.join(soundsDir, 'attention.mp3'), 'existing', 'utf8');
+
+  const sourceFile = path.join(root, 'attention.mp3');
+  const sourceDir = path.join(root, 'folder');
+  fs.mkdirSync(sourceDir);
+  fs.writeFileSync(sourceFile, 'new', 'utf8');
+  fs.writeFileSync(path.join(sourceDir, 'done.wav'), 'sound', 'utf8');
+  fs.writeFileSync(path.join(sourceDir, 'ignore.txt'), 'not sound', 'utf8');
+
+  const result = addSoundsToLibrary([sourceFile, sourceDir], { soundDir: soundsDir });
+
+  assert.deepEqual(result.added.map(file => file.name).sort(), ['attention-2.mp3', 'done.wav']);
+  assert.equal(fs.readFileSync(path.join(soundsDir, 'attention-2.mp3'), 'utf8'), 'new');
+  assert.deepEqual(result.skipped.map(skip => skip.reason), ['unsupported-extension']);
+});
+
+test('agent sound-add alias copies sound and sound assign writes agent config', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-sound-cli-'));
+  const home = path.join(root, 'claude-home');
+  const soundsDir = path.join(root, 'sounds');
+  const source = path.join(root, 'attention.mp3');
+  fs.writeFileSync(source, 'sound', 'utf8');
+
+  const io = {
+    env: { CLAUDE_HOME: home },
+    isTTY: false,
+    out: () => {},
+    err: () => {},
+  };
+
+  assert.equal(await claudeMain(['sound-add', source, '--sound-dir', soundsDir], io), 0);
+  assert.equal(fs.existsSync(path.join(soundsDir, 'attention.mp3')), true);
+  assert.equal(readAgentConfig('claude', { home }).notifications.soundDir, soundsDir);
+
+  assert.equal(
+    await claudeMain(['sound', 'assign', 'permission_prompt', 'attention.mp3', '--sound-dir', soundsDir], io),
+    0,
+  );
+
+  assert.deepEqual(readAgentConfig('claude', { home }).notifications.eventSounds.permission_prompt, [
+    'attention.mp3',
+  ]);
+});
+
+test('sound assign can run interactively with injected prompts', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-sound-interactive-'));
+  const home = path.join(root, 'codex-home');
+  const soundsDir = path.join(root, 'sounds');
+  fs.mkdirSync(soundsDir, { recursive: true });
+  fs.writeFileSync(path.join(soundsDir, 'done.wav'), 'sound', 'utf8');
+
+  const prompts = {
+    select: async () => 'agent_turn_complete',
+    multiselect: async () => ['done.wav'],
+    isCancel: () => false,
+  };
+
+  assert.equal(
+    await codexMain(['sound', 'assign', '--sound-dir', soundsDir], {
+      env: { CODEX_HOME: home },
+      isTTY: false,
+      out: () => {},
+      err: () => {},
+      prompts,
+    }),
+    0,
+  );
+
+  assert.deepEqual(readAgentConfig('codex', { home }).notifications.eventSounds.agent_turn_complete, [
+    'done.wav',
+  ]);
+});
+
+test('agent notify commands read separate per-agent sound config', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-notify-config-'));
+  const claudeHome = path.join(root, 'claude-home');
+  const codexHome = path.join(root, 'codex-home');
+  const soundsDir = soundsFixture();
+
+  writeAgentConfig('claude', {
+    version: 1,
+    agent: 'claude',
+    managedBy: 'claude-env',
+    notifications: {
+      soundDir: soundsDir,
+      eventSounds: { permission_prompt: ['attention.mp3'] },
+    },
+  }, { home: claudeHome });
+  writeAgentConfig('codex', {
+    version: 1,
+    agent: 'codex',
+    managedBy: 'codex-env',
+    notifications: {
+      soundDir: soundsDir,
+      eventSounds: { permission_prompt: ['done.wav'] },
+    },
+  }, { home: codexHome });
+
+  const seen = [];
+  assert.equal(
+    await claudeMain(['notify', JSON.stringify({ notification_type: 'permission_prompt' })], {
+      env: { CLAUDE_HOME: claudeHome },
+      out: () => {},
+      err: () => {},
+      notifyDeps: {
+        playSound: (event, cfg) => seen.push({ agent: 'claude', event, cfg }),
+        log: () => {},
+      },
+    }),
+    0,
+  );
+  assert.equal(
+    await codexMain(['notify', JSON.stringify({ type: 'approval-requested' })], {
+      env: { CODEX_HOME: codexHome },
+      out: () => {},
+      err: () => {},
+      notifyDeps: {
+        playSound: (event, cfg) => seen.push({ agent: 'codex', event, cfg }),
+        log: () => {},
+      },
+    }),
+    0,
+  );
+
+  assert.deepEqual(seen.map(item => item.cfg.notifications.eventSounds.permission_prompt), [
+    ['attention.mp3'],
+    ['done.wav'],
+  ]);
 });
 
 test('notifyMain plays sound for Codex argv JSON payload', async () => {

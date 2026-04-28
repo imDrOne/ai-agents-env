@@ -3,9 +3,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 
-const DEFAULT_SOUNDS_DIR = path.join(os.homedir(), 'Documents', 'claude-sounds');
+const DEFAULT_SOUNDS_DIR = path.join(os.homedir(), 'Documents', 'agent-env-sounds');
 const LOG_FILE = path.join(os.tmpdir(), 'agent-env-notify.log');
-const AUDIO_EXT_RE = /\.(mp3|wav|ogg|m4a|flac)$/i;
+export const AUDIO_EXT_RE = /\.(mp3|wav|ogg|m4a|flac)$/i;
 
 export const CLAUDE_HOOK_EVENT_MAP = Object.freeze({
   SessionStart: 'session_start',
@@ -74,8 +74,8 @@ export function classifyNotification(payload) {
   return { client: 'unknown', event: 'unknown', shouldPlay: false, reason: 'unsupported' };
 }
 
-export function getSoundsDir() {
-  return process.env.AGENT_SOUNDS_DIR || DEFAULT_SOUNDS_DIR;
+export function getSoundsDir(env = process.env) {
+  return env.AGENT_SOUNDS_DIR || DEFAULT_SOUNDS_DIR;
 }
 
 export function getSoundFiles(dir = getSoundsDir()) {
@@ -158,7 +158,12 @@ export async function notifyMain(argv, deps = {}) {
 
   if (argv[0] === 'stop') {
     logFn(`[${new Date().toISOString()}] stop hook`);
-    playSoundFn('agent_turn_complete', readConfigFn());
+    try {
+      playSoundFn('agent_turn_complete', readConfigFn());
+    } catch (error) {
+      logFn(`[${new Date().toISOString()}] notify error: ${error}`);
+      return 1;
+    }
     return 0;
   }
 

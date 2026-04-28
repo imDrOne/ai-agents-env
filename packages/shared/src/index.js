@@ -15,6 +15,12 @@ export {
 export { runAgentCli } from './agent-cli.js';
 export { runCacCommand } from './cli-router.js';
 export {
+  createGlobalCleanupPlan,
+  createProjectCleanupPlan,
+  executeCleanupPlan,
+  formatCleanupPlan,
+} from './cleanup.js';
+export {
   classifyNotification,
   getSoundFiles,
   getSoundsDir,

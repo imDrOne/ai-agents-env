@@ -1,0 +1,134 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import test from 'node:test';
+
+import {
+  createGlobalCleanupPlan,
+  executeCleanupPlan,
+  formatCleanupPlan,
+} from '../packages/shared/src/cleanup.js';
+import { initProjectProfile, projectProfilePath } from '../packages/shared/src/index.js';
+import { main as claudeMain } from '../packages/claude-env/src/cli.js';
+import { main as codexMain } from '../packages/codex-env/src/cli.js';
+
+function writeFile(filePath, content = '') {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, content, 'utf8');
+}
+
+test('createGlobalCleanupPlan removes only managed Claude files and empty managed dirs by default', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cleanup-'));
+  const home = path.join(root, '.claude');
+  writeFile(path.join(home, 'claude-env.json'), '{"managedBy":"claude-env"}\n');
+  writeFile(path.join(home, 'CLAUDE.md'), '# Claude Environment\n\nManaged by claude-env.\n');
+  fs.mkdirSync(path.join(home, 'commands'), { recursive: true });
+  fs.mkdirSync(path.join(home, 'hooks'), { recursive: true });
+  writeFile(path.join(home, 'agents', 'custom.md'), 'user content\n');
+
+  const plan = createGlobalCleanupPlan('claude', { home });
+
+  assert.deepEqual(
+    plan.operations.map(op => [op.kind, path.relative(home, op.path)]),
+    [
+      ['removeFile', 'claude-env.json'],
+      ['removeFile', 'CLAUDE.md'],
+      ['removeEmptyDir', 'commands'],
+      ['removeEmptyDir', 'hooks'],
+      ['removeEmptyDir', 'agents'],
+      ['removeEmptyDir', ''],
+    ],
+  );
+  assert.equal(plan.operations.find(op => op.path.endsWith('agents')).reason, 'directory-not-empty');
+});
+
+test('executeCleanupPlan respects dry-run and then removes safe files', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cleanup-'));
+  const home = path.join(root, '.codex');
+  writeFile(path.join(home, 'codex-env.json'), '{"managedBy":"codex-env"}\n');
+  writeFile(path.join(home, 'AGENTS.md'), '# Codex Environment\n\nManaged by codex-env.\n');
+  fs.mkdirSync(path.join(home, 'rules'), { recursive: true });
+
+  const plan = createGlobalCleanupPlan('codex', { home });
+  const dryRun = executeCleanupPlan(plan, { dryRun: true });
+  assert.equal(dryRun.removed.length, 0);
+  assert.equal(fs.existsSync(path.join(home, 'codex-env.json')), true);
+
+  const applied = executeCleanupPlan(plan);
+  assert.equal(applied.skipped.length, 0);
+  assert.equal(fs.existsSync(path.join(home, 'codex-env.json')), false);
+  assert.equal(fs.existsSync(path.join(home, 'AGENTS.md')), false);
+  assert.equal(fs.existsSync(home), false);
+});
+
+test('cleanup plan skips user-modified managed-looking files', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cleanup-'));
+  const home = path.join(root, '.claude');
+  writeFile(path.join(home, 'CLAUDE.md'), '# User edited\n');
+
+  const plan = createGlobalCleanupPlan('claude', { home });
+  const claudeMd = plan.operations.find(op => op.path.endsWith('CLAUDE.md'));
+
+  assert.equal(claudeMd.kind, 'skip');
+  assert.equal(claudeMd.reason, 'content-mismatch');
+});
+
+test('formatCleanupPlan marks dry-run removable and skipped operations', () => {
+  const plan = {
+    operations: [
+      { kind: 'removeFile', path: '/tmp/a' },
+      { kind: 'skip', path: '/tmp/b', reason: 'content-mismatch' },
+    ],
+  };
+
+  assert.match(formatCleanupPlan(plan), /remove file \/tmp\/a/);
+  assert.match(formatCleanupPlan(plan), /skip \/tmp\/b \(content-mismatch\)/);
+});
+
+test('agent clean global dry-run does not mutate home', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cleanup-cli-'));
+  const home = path.join(root, '.claude');
+  writeFile(path.join(home, 'claude-env.json'), '{"managedBy":"claude-env"}\n');
+  const lines = [];
+
+  const code = await claudeMain(['clean', 'global', '--dry-run', '--home', home], {
+    out: message => lines.push(message),
+    err: message => lines.push(message),
+  });
+
+  assert.equal(code, 0);
+  assert.match(lines.join('\n'), /remove file .*claude-env\.json/);
+  assert.equal(fs.existsSync(path.join(home, 'claude-env.json')), true);
+});
+
+test('agent clean global applies safe cleanup', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cleanup-cli-'));
+  const home = path.join(root, '.codex');
+  writeFile(path.join(home, 'codex-env.json'), '{"managedBy":"codex-env"}\n');
+  const lines = [];
+
+  const code = await codexMain(['clean', 'global', '--home', home], {
+    out: message => lines.push(message),
+    err: message => lines.push(message),
+  });
+
+  assert.equal(code, 0);
+  assert.match(lines.join('\n'), /Removed 2 item/);
+  assert.equal(fs.existsSync(home), false);
+});
+
+test('agent clean project removes selected project profile scope', async () => {
+  const project = fs.mkdtempSync(path.join(os.tmpdir(), 'cleanup-project-'));
+  initProjectProfile('claude', project, { scope: 'local' });
+  initProjectProfile('claude', project, { scope: 'tracked' });
+
+  const code = await claudeMain(['clean', 'project', '--local', '--project', project], {
+    out: () => {},
+    err: () => {},
+  });
+
+  assert.equal(code, 0);
+  assert.equal(fs.existsSync(projectProfilePath('claude', project, 'local')), false);
+  assert.equal(fs.existsSync(projectProfilePath('claude', project, 'tracked')), true);
+});

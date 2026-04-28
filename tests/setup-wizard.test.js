@@ -137,3 +137,51 @@ test('dashboard setup remains facade-only', async () => {
   assert.equal(code, 0);
   assert.match(lines.join('\n'), /facade-only/);
 });
+
+test('claude-env project setup writes local project overrides interactively', async () => {
+  const project = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-project-setup-'));
+  const prompts = fakePrompts([
+    project,
+    'local',
+    ['plugins.superpowers'],
+    ['plugins.playwright'],
+    false,
+  ]);
+
+  const code = await claudeMain(['project', 'setup'], {
+    out: () => {},
+    err: () => {},
+    prompts,
+  });
+
+  assert.equal(code, 0);
+  const profile = JSON.parse(fs.readFileSync(path.join(project, '.agent-env.local', 'claude.json'), 'utf8'));
+  assert.equal(profile.features.plugins.superpowers, false);
+  assert.equal(profile.features.plugins.playwright, true);
+  assert.deepEqual(
+    prompts.calls.map(call => call[0]),
+    ['intro', 'text', 'select', 'multiselect', 'multiselect', 'confirm', 'outro'],
+  );
+});
+
+test('codex-env project setup dry-run does not write profile', async () => {
+  const project = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-project-setup-'));
+  const prompts = fakePrompts([
+    project,
+    'tracked',
+    ['skills.personal-workflow'],
+    [],
+    true,
+  ]);
+  const lines = [];
+
+  const code = await codexMain(['project', 'setup'], {
+    out: message => lines.push(message),
+    err: message => lines.push(message),
+    prompts,
+  });
+
+  assert.equal(code, 0);
+  assert.match(lines.join('\n'), /would disable skills.personal-workflow/);
+  assert.equal(fs.existsSync(path.join(project, '.agent-env', 'codex.json')), false);
+});

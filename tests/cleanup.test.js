@@ -8,8 +8,8 @@ import {
   createGlobalCleanupPlan,
   executeCleanupPlan,
   formatCleanupPlan,
-} from '../packages/shared/src/cleanup.js';
-import { initProjectProfile, projectProfilePath } from '../packages/shared/src/index.js';
+} from '@agent-env/shared';
+import { initProjectProfile, projectProfilePath } from '@agent-env/shared';
 import { main as claudeMain } from '../packages/claude-env/src/cli.js';
 import { main as codexMain } from '../packages/codex-env/src/cli.js';
 
@@ -116,6 +116,86 @@ test('agent clean global applies safe cleanup', async () => {
   assert.equal(code, 0);
   assert.match(lines.join('\n'), /Removed 2 item/);
   assert.equal(fs.existsSync(home), false);
+});
+
+test('agent clean global wipe dry-run does not mutate home', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cleanup-cli-'));
+  const home = path.join(root, '.claude');
+  writeFile(path.join(home, 'custom', 'notes.md'), 'user content\n');
+  const lines = [];
+
+  const code = await claudeMain(['clean', 'global', '--wipe', '--dry-run', '--home', home], {
+    out: message => lines.push(message),
+    err: message => lines.push(message),
+  });
+
+  assert.equal(code, 0);
+  assert.match(lines.join('\n'), /wipe directory .*\.claude/);
+  assert.equal(fs.existsSync(path.join(home, 'custom', 'notes.md')), true);
+});
+
+test('agent clean global wipe requires explicit confirmation', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cleanup-cli-'));
+  const home = path.join(root, '.codex');
+  writeFile(path.join(home, 'user.toml'), 'custom = true\n');
+  const lines = [];
+
+  const code = await codexMain(['clean', 'global', '--wipe', '--home', home], {
+    out: message => lines.push(message),
+    err: message => lines.push(message),
+  });
+
+  assert.equal(code, 1);
+  assert.match(lines.join('\n'), /requires --confirm-wipe/);
+  assert.equal(fs.existsSync(path.join(home, 'user.toml')), true);
+});
+
+test('agent clean global wipe removes full agent home when confirmed', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cleanup-cli-'));
+  const home = path.join(root, '.codex');
+  const claudeHome = path.join(root, '.claude');
+  writeFile(path.join(home, 'plugins', 'cache', 'custom.txt'), 'plugin cache\n');
+  writeFile(path.join(home, 'config.toml'), 'user edited\n');
+  writeFile(path.join(claudeHome, 'CLAUDE.md'), 'do not touch\n');
+
+  const code = await codexMain(['clean', 'global', '--wipe', '--confirm-wipe', '--home', home], {
+    out: () => {},
+    err: () => {},
+  });
+
+  assert.equal(code, 0);
+  assert.equal(fs.existsSync(home), false);
+  assert.equal(fs.existsSync(path.join(claudeHome, 'CLAUDE.md')), true);
+});
+
+test('agent clean global wipe allows custom homes with agent evidence', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cleanup-cli-'));
+  const home = path.join(root, 'custom-codex-home');
+  writeFile(path.join(home, 'AGENTS.md'), 'custom agent instructions\n');
+
+  const code = await codexMain(['clean', 'global', '--wipe', '--confirm-wipe', '--home', home], {
+    out: () => {},
+    err: () => {},
+  });
+
+  assert.equal(code, 0);
+  assert.equal(fs.existsSync(home), false);
+});
+
+test('agent clean global wipe refuses unsafe homes', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cleanup-cli-'));
+  const homeFile = path.join(root, 'sentinel.txt');
+  writeFile(homeFile, 'keep\n');
+  const lines = [];
+
+  const code = await claudeMain(['clean', 'global', '--wipe', '--confirm-wipe', '--home', root], {
+    out: message => lines.push(message),
+    err: message => lines.push(message),
+  });
+
+  assert.equal(code, 1);
+  assert.match(lines.join('\n'), /Refusing to wipe unsafe home/);
+  assert.equal(fs.existsSync(homeFile), true);
 });
 
 test('agent clean project removes selected project profile scope', async () => {

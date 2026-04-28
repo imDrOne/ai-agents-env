@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { AGENT_DEFINITIONS, createInstallPlan } from './install-plan.js';
 import { projectProfilePath } from './project-env.js';
@@ -17,6 +18,8 @@ export function createGlobalCleanupPlan(agentId, options = {}) {
   const agent = AGENT_DEFINITIONS[agentId];
   if (!agent) throw new Error(`Unknown agent: ${agentId}`);
   const home = options.home ?? process.env[agent.homeEnv] ?? agent.defaultHome();
+  if (options.wipe) return createGlobalWipePlan(agentId, home);
+
   const installPlan = createInstallPlan(agentId, { home, withSerena: true });
   const operations = [];
   const seen = new Set();
@@ -61,6 +64,7 @@ export function formatCleanupPlan(plan) {
     .map(op => {
       if (op.kind === 'removeFile') return `remove file ${op.path}`;
       if (op.kind === 'removeEmptyDir') return `remove empty directory ${op.path}`;
+      if (op.kind === 'wipeDir') return `wipe directory ${op.path}`;
       if (op.kind === 'skip') return `skip ${op.path} (${op.reason})`;
       return `${op.kind} ${op.path}`;
     })
@@ -82,6 +86,9 @@ export function executeCleanupPlan(plan, options = {}) {
     if (op.kind === 'removeFile') {
       fs.rmSync(op.path, { force: true });
       removed.push(op.path);
+    } else if (op.kind === 'wipeDir') {
+      fs.rmSync(op.path, { recursive: true, force: true });
+      removed.push(op.path);
     } else if (op.kind === 'removeEmptyDir') {
       if (isExistingEmptyDir(op.path)) {
         fs.rmdirSync(op.path);
@@ -93,6 +100,18 @@ export function executeCleanupPlan(plan, options = {}) {
   }
 
   return { ok: true, dryRun, removed, skipped };
+}
+
+function createGlobalWipePlan(agentId, home) {
+  const safety = validateWipeHome(agentId, home);
+  return {
+    agent: agentId,
+    home,
+    destructive: true,
+    operations: safety.ok
+      ? [{ kind: 'wipeDir', path: home }]
+      : [{ kind: 'skip', path: home, reason: safety.reason }],
+  };
 }
 
 function classifyGlobalCleanupOperation(agentId, home, op) {
@@ -147,4 +166,25 @@ function cleanupOrder(operation, home) {
   if (operation.kind === 'removeEmptyDir' && operation.path === home) return 2;
   if (operation.kind === 'removeEmptyDir') return 1;
   return 1;
+}
+
+function validateWipeHome(agentId, home) {
+  const expectedBasename = agentId === 'claude' ? '.claude' : '.codex';
+  const resolved = path.resolve(home || '');
+  const userHome = path.resolve(os.homedir());
+
+  if (!home) return { ok: false, reason: 'unsafe-empty-home' };
+  if (resolved === path.parse(resolved).root) return { ok: false, reason: 'unsafe-root-home' };
+  if (resolved === userHome) return { ok: false, reason: 'unsafe-user-home' };
+  if (path.basename(resolved) !== expectedBasename && !hasAgentHomeEvidence(agentId, resolved)) {
+    return { ok: false, reason: `unsafe-home-basename-expected-${expectedBasename}` };
+  }
+  return { ok: true };
+}
+
+function hasAgentHomeEvidence(agentId, home) {
+  const evidence = agentId === 'claude'
+    ? ['claude-env.json', 'CLAUDE.md', 'commands', 'hooks', 'agents']
+    : ['codex-env.json', 'AGENTS.md', 'config.toml', 'rules'];
+  return evidence.some(name => fs.existsSync(path.join(home, name)));
 }

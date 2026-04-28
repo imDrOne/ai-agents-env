@@ -183,12 +183,26 @@ function cleanCommand(agentId, argv, io) {
   const [target = 'help', ...rest] = argv;
   if (target === 'global') {
     const options = parseCommonOptions(rest, {
-      boolean: new Set(['--dry-run']),
+      boolean: new Set(['--dry-run', '--wipe', '--confirm-wipe']),
       value: new Set(['--home']),
     });
-    const plan = createGlobalCleanupPlan(agentId, { home: options.values['--home'] });
+    const dryRun = Boolean(options.flags['--dry-run']);
+    const wipe = Boolean(options.flags['--wipe']);
+    if (wipe && !dryRun && !options.flags['--confirm-wipe']) {
+      io.err(`Destructive global wipe requires --confirm-wipe. Run '${agentId}-env clean global --wipe --dry-run' first.`);
+      return 1;
+    }
+    const plan = createGlobalCleanupPlan(agentId, {
+      home: options.values['--home'],
+      wipe,
+    });
     io.out(formatCleanupPlan(plan));
-    const result = executeCleanupPlan(plan, { dryRun: Boolean(options.flags['--dry-run']) });
+    const unsafe = plan.operations.find(op => op.kind === 'skip' && String(op.reason ?? '').startsWith('unsafe-'));
+    if (unsafe) {
+      io.err(`Refusing to wipe unsafe home: ${unsafe.path} (${unsafe.reason})`);
+      return 1;
+    }
+    const result = executeCleanupPlan(plan, { dryRun });
     if (!result.dryRun) io.out(`Removed ${result.removed.length} item(s). Skipped ${result.skipped.length} item(s).`);
     return 0;
   }
@@ -208,6 +222,7 @@ function cleanCommand(agentId, argv, io) {
   io.out(
     [
       `Usage: ${agentId}-env clean global [--dry-run] [--home <path>]`,
+      `       ${agentId}-env clean global --wipe [--dry-run|--confirm-wipe] [--home <path>]`,
       `       ${agentId}-env clean project [--local|--tracked|--all] [--dry-run] [--project <path>]`,
     ].join('\n'),
   );
@@ -289,6 +304,7 @@ function printHelp(agentId, io) {
       `  ${bin} project enable <plugin|skill|hook|instruction> <name> [--local|--tracked]`,
       `  ${bin} project disable <plugin|skill|hook|instruction> <name> [--local|--tracked]`,
       `  ${bin} clean global [--dry-run] [--home <path>]`,
+      `  ${bin} clean global --wipe [--dry-run|--confirm-wipe] [--home <path>]`,
       `  ${bin} clean project [--local|--tracked|--all] [--dry-run] [--project <path>]`,
     ].join('\n'),
   );

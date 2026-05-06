@@ -3,6 +3,7 @@ import {
   VALID_SERENA_CLIENTS,
   configureSerenaForAgent,
   createInstallPlan,
+  ensurePlannotatorInstalled,
   executeInstallPlan,
   formatInstallPlan,
   getSerenaStatus,
@@ -176,11 +177,23 @@ export function runDashboardInstall(options = {}, io = defaultIo()) {
   }
 
   io.out('');
+  io.out('Plannotator installation:');
+  const plannotatorResult = ensurePlannotatorInstalled({
+    dryRun,
+    io,
+    spawnSyncImpl: io?.spawnSyncImpl,
+    platform: io?.platform,
+  });
+  ok = plannotatorResult.ok && ok;
+
+  io.out('');
   io.out('Claude plugin installation:');
   const pluginResult = installClaudePlugins({
     dryRun,
     io,
     spawnSyncImpl: io?.spawnSyncImpl,
+    platform: io?.platform,
+    ensurePlannotator: false,
   });
   ok = pluginResult.ok && ok;
 

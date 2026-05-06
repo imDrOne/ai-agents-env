@@ -2,4 +2,5 @@
 # Format: <destination|*> <marketplace>/<plugin> <source-skill|*>
 
 * claude-plugins-official/superpowers *
+plannotator-compound plannotator/plannotator plannotator-compound
 caveman caveman/caveman caveman

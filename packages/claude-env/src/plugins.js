@@ -2,9 +2,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { ensurePlannotatorInstalled } from '@agent-env/shared';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = path.resolve(__dirname, '..');
+const PLANNOTATOR_PLUGIN = 'plannotator@plannotator';
 
 export const DEFAULT_MARKETPLACES_FILE = path.join(PACKAGE_ROOT, 'marketplaces.txt');
 export const DEFAULT_PLUGINS_FILE = path.join(PACKAGE_ROOT, 'plugins.txt');
@@ -50,6 +52,8 @@ export function installClaudePlugins({
   dryRun = false,
   spawnSyncImpl = spawnSync,
   io = defaultIo(),
+  platform = process.platform,
+  ensurePlannotator = true,
 } = {}) {
   const plan = createClaudePluginPlan({ marketplacesFile, pluginsFile, onlyPlugins });
   const summary = {
@@ -62,6 +66,8 @@ export function installClaudePlugins({
     marketplacesFailed: 0,
     pluginsInstalled: 0,
     pluginsFailed: 0,
+    plannotatorInstalled: false,
+    plannotatorSkipped: false,
   };
 
   if (dryRun) {
@@ -72,6 +78,22 @@ export function installClaudePlugins({
         io.out(`  [dry-run] would install plugin: ${operation.plugin}`);
       }
     }
+    const plannotator = ensurePlannotator
+      ? ensurePlannotatorForPlan(plan, { dryRun, spawnSyncImpl, io, platform })
+      : null;
+    summary.plannotatorInstalled = Boolean(plannotator?.installed);
+    summary.plannotatorSkipped = Boolean(plannotator?.skipped);
+    summary.ok = summary.ok && (plannotator?.ok ?? true);
+    return summary;
+  }
+
+  const plannotator = ensurePlannotator
+    ? ensurePlannotatorForPlan(plan, { dryRun, spawnSyncImpl, io, platform })
+    : null;
+  summary.plannotatorInstalled = Boolean(plannotator?.installed);
+  summary.plannotatorSkipped = Boolean(plannotator?.skipped);
+  if (plannotator && !plannotator.ok) {
+    summary.ok = false;
     return summary;
   }
 
@@ -150,7 +172,12 @@ export function pluginCommand(argv, io = defaultIo()) {
   }
   if (subcommand === 'install') {
     const options = parsePluginOptions(rest);
-    const result = installClaudePlugins({ ...options, io, spawnSyncImpl: io?.spawnSyncImpl });
+    const result = installClaudePlugins({
+      ...options,
+      io,
+      spawnSyncImpl: io?.spawnSyncImpl,
+      platform: io?.platform,
+    });
     return result.ok ? 0 : 1;
   }
   printPluginHelp(io);
@@ -198,6 +225,11 @@ function readList(filePath) {
 
 function firstOutputLine(result) {
   return (result.stderr || result.stdout || '').trim().split(/\r?\n/)[0] || '';
+}
+
+function ensurePlannotatorForPlan(plan, options) {
+  if (!plan.operations.some(operation => operation.plugin === PLANNOTATOR_PLUGIN)) return null;
+  return ensurePlannotatorInstalled(options);
 }
 
 function printPluginHelp(io) {

@@ -11,7 +11,7 @@ import {
 } from '../packages/claude-env/src/plugins.js';
 import { main as claudeMain } from '../packages/claude-env/src/cli.js';
 
-function writeFixture() {
+function writeFixture({ withPlannotator = false } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-plugins-'));
   const marketplacesFile = path.join(dir, 'marketplaces.txt');
   const pluginsFile = path.join(dir, 'plugins.txt');
@@ -35,6 +35,7 @@ function writeFixture() {
       '',
       'superpowers@claude-plugins-official',
       'caveman@caveman',
+      ...(withPlannotator ? ['plannotator@plannotator'] : []),
       '',
     ].join('\n'),
     'utf8',
@@ -96,6 +97,28 @@ test('installClaudePlugins dry-run does not invoke claude CLI', () => {
   assert.equal(calls.length, 0);
   assert.match(lines.join('\n'), /would add marketplace: anthropics\/claude-plugins-official/);
   assert.match(lines.join('\n'), /would install plugin: superpowers@claude-plugins-official/);
+});
+
+test('installClaudePlugins dry-run checks plannotator binary when selected', () => {
+  const fixture = writeFixture({ withPlannotator: true });
+  const calls = [];
+  const lines = [];
+  const result = installClaudePlugins({
+    ...fixture,
+    dryRun: true,
+    spawnSyncImpl: (command, args) => {
+      calls.push([command, args]);
+      return { status: 1, stdout: '', stderr: '' };
+    },
+    io: { out: message => lines.push(message), err: message => lines.push(message) },
+    platform: 'darwin',
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.dryRun, true);
+  assert.deepEqual(calls, [['which', ['plannotator']]]);
+  assert.match(lines.join('\n'), /would install plugin: plannotator@plannotator/);
+  assert.match(lines.join('\n'), /would install plannotator via https:\/\/plannotator\.ai\/install\.sh/);
 });
 
 test('installClaudePlugins invokes Claude marketplace and plugin commands', () => {
@@ -182,6 +205,43 @@ test('claude-env plugins install returns non-zero on hard plugin failures', asyn
   );
 
   assert.equal(code, 1);
+});
+
+test('claude-env plugins install ensures plannotator before installing plugin', async () => {
+  const fixture = writeFixture({ withPlannotator: true });
+  const calls = [];
+  const lines = [];
+  const code = await claudeMain(
+    [
+      'plugins',
+      'install',
+      '--plugins-file',
+      fixture.pluginsFile,
+      '--marketplaces-file',
+      fixture.marketplacesFile,
+    ],
+    {
+      out: message => lines.push(message),
+      err: message => lines.push(message),
+      spawnSyncImpl: (cmd, args) => {
+        calls.push([cmd, args]);
+        if (cmd === 'which') return { status: 1, stdout: '', stderr: '' };
+        if (cmd === 'bash') return { status: 0, stdout: '', stderr: '' };
+        return { status: 0, stdout: '', stderr: '' };
+      },
+      platform: 'linux',
+    },
+  );
+
+  assert.equal(code, 0);
+  assert.deepEqual(calls[0], ['which', ['plannotator']]);
+  assert.deepEqual(calls[1], [
+    'bash',
+    ['-lc', 'curl -fsSL https://plannotator.ai/install.sh | bash'],
+  ]);
+  assert.deepEqual(calls[2], ['claude', ['--version']]);
+  assert.match(lines.join('\n'), /plannotator installed via https:\/\/plannotator\.ai\/install\.sh/);
+  assert.match(lines.join('\n'), /plugin installed: plannotator@plannotator/);
 });
 
 test('installClaudePlugins skips gracefully when Claude CLI is missing', () => {

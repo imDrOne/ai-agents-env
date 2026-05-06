@@ -84,7 +84,8 @@ export async function setupCommand(io = defaultIo()) {
       dryRun,
       io,
       onlyPlugins: selectedPlugins,
-      spawnSyncImpl: io.spawnSyncImpl,
+      spawnSyncImpl: io?.spawnSyncImpl,
+      platform: io?.platform,
     });
     if (!result.ok) return 1;
   }

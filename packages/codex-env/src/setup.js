@@ -1,6 +1,7 @@
 import {
   configureSerenaForAgent,
   createInstallPlan,
+  ensurePlannotatorInstalled,
   executeInstallPlan,
   formatInstallPlan,
 } from '../../shared/src/index.js';
@@ -82,6 +83,14 @@ export async function setupCommand(io = defaultIo()) {
     });
     if (!serena.ok) return 1;
   }
+
+  const plannotator = ensurePlannotatorInstalled({
+    dryRun,
+    io,
+    spawnSyncImpl: io?.spawnSyncImpl,
+    platform: io?.platform,
+  });
+  if (!plannotator.ok) return 1;
 
   if (components.includes('skills')) {
     const result = syncCodexSkills({

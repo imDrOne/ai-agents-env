@@ -133,6 +133,27 @@ test('agent clean global wipe dry-run does not mutate home', async () => {
   assert.equal(fs.existsSync(path.join(home, 'custom', 'notes.md')), true);
 });
 
+test('codex global wipe dry-run includes agents home without mutating it', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cleanup-cli-'));
+  const home = path.join(root, '.codex');
+  const agentsHome = path.join(root, '.agents');
+  writeFile(path.join(home, 'custom.toml'), 'user content\n');
+  writeFile(path.join(agentsHome, 'skills', 'personal-workflow', 'SKILL.md'), '# skill\n');
+  const lines = [];
+
+  const code = await codexMain(['clean', 'global', '--wipe', '--dry-run', '--home', home], {
+    out: message => lines.push(message),
+    err: message => lines.push(message),
+    env: { AGENTS_HOME: agentsHome },
+  });
+
+  assert.equal(code, 0);
+  assert.match(lines.join('\n'), /wipe directory .*\.codex/);
+  assert.match(lines.join('\n'), /wipe directory .*\.agents/);
+  assert.equal(fs.existsSync(path.join(home, 'custom.toml')), true);
+  assert.equal(fs.existsSync(path.join(agentsHome, 'skills', 'personal-workflow', 'SKILL.md')), true);
+});
+
 test('agent clean global wipe requires explicit confirmation', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cleanup-cli-'));
   const home = path.join(root, '.codex');
@@ -153,6 +174,7 @@ test('agent clean global wipe removes full agent home when confirmed', async () 
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cleanup-cli-'));
   const home = path.join(root, '.codex');
   const claudeHome = path.join(root, '.claude');
+  const agentsHome = path.join(root, '.agents');
   writeFile(path.join(home, 'plugins', 'cache', 'custom.txt'), 'plugin cache\n');
   writeFile(path.join(home, 'config.toml'), 'user edited\n');
   writeFile(path.join(claudeHome, 'CLAUDE.md'), 'do not touch\n');
@@ -160,6 +182,7 @@ test('agent clean global wipe removes full agent home when confirmed', async () 
   const code = await codexMain(['clean', 'global', '--wipe', '--confirm-wipe', '--home', home], {
     out: () => {},
     err: () => {},
+    env: { AGENTS_HOME: agentsHome },
   });
 
   assert.equal(code, 0);
@@ -167,11 +190,50 @@ test('agent clean global wipe removes full agent home when confirmed', async () 
   assert.equal(fs.existsSync(path.join(claudeHome, 'CLAUDE.md')), true);
 });
 
+test('codex global wipe removes agents home when confirmed', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cleanup-cli-'));
+  const home = path.join(root, '.codex');
+  const agentsHome = path.join(root, '.agents');
+  writeFile(path.join(home, 'config.toml'), 'user edited\n');
+  writeFile(path.join(agentsHome, 'skills', 'plannotator-compound', 'SKILL.md'), '# skill\n');
+
+  const code = await codexMain(['clean', 'global', '--wipe', '--confirm-wipe', '--home', home], {
+    out: () => {},
+    err: () => {},
+    env: { AGENTS_HOME: agentsHome },
+  });
+
+  assert.equal(code, 0);
+  assert.equal(fs.existsSync(home), false);
+  assert.equal(fs.existsSync(agentsHome), false);
+});
+
+test('codex global wipe refuses unsafe agents home', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cleanup-cli-'));
+  const home = path.join(root, '.codex');
+  const unsafeAgentsHome = path.join(root, 'custom-agents');
+  writeFile(path.join(home, 'config.toml'), 'user edited\n');
+  writeFile(path.join(unsafeAgentsHome, 'sentinel.txt'), 'keep\n');
+  const lines = [];
+
+  const code = await codexMain(['clean', 'global', '--wipe', '--confirm-wipe', '--home', home], {
+    out: message => lines.push(message),
+    err: message => lines.push(message),
+    env: { AGENTS_HOME: unsafeAgentsHome },
+  });
+
+  assert.equal(code, 1);
+  assert.match(lines.join('\n'), /Refusing to wipe unsafe home/);
+  assert.equal(fs.existsSync(home), true);
+  assert.equal(fs.existsSync(path.join(unsafeAgentsHome, 'sentinel.txt')), true);
+});
+
 test('executeCleanupPlan reports wipe ENOTEMPTY as skipped instead of throwing', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cleanup-wipe-race-'));
   const home = path.join(root, '.codex');
+  const agentsHome = path.join(root, '.agents');
   writeFile(path.join(home, 'logs_2.sqlite'), 'busy\n');
-  const plan = createGlobalCleanupPlan('codex', { home, wipe: true });
+  const plan = createGlobalCleanupPlan('codex', { home, wipe: true, agentsHome });
   const originalRmSync = fs.rmSync;
 
   try {
@@ -200,11 +262,13 @@ test('executeCleanupPlan reports wipe ENOTEMPTY as skipped instead of throwing',
 test('agent clean global wipe allows custom homes with agent evidence', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cleanup-cli-'));
   const home = path.join(root, 'custom-codex-home');
+  const agentsHome = path.join(root, '.agents');
   writeFile(path.join(home, 'AGENTS.md'), 'custom agent instructions\n');
 
   const code = await codexMain(['clean', 'global', '--wipe', '--confirm-wipe', '--home', home], {
     out: () => {},
     err: () => {},
+    env: { AGENTS_HOME: agentsHome },
   });
 
   assert.equal(code, 0);

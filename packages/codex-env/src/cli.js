@@ -1,10 +1,11 @@
 import {
+  ensurePlannotatorInstalled,
   formatAgentHelp,
   notifyMain,
   readAgentConfig,
   runAgentCli,
   runCacCommand,
-} from '../../shared/src/index.js';
+} from '@agent-env/shared';
 import { skillsCommand } from './skills.js';
 import { setupCommand } from './setup.js';
 
@@ -32,6 +33,10 @@ export async function main(argv, io) {
             }),
           ),
         );
+      cli
+        .command('install', 'Install Codex environment')
+        .allowUnknownOptions()
+        .action(run(() => installCommand(argv.slice(1), io)));
       cli
         .command('[...args]', 'Run shared Codex commands')
         .allowUnknownOptions()
@@ -74,4 +79,17 @@ function defaultIo() {
     out: message => console.log(message),
     err: message => console.error(message),
   };
+}
+
+async function installCommand(argv, io) {
+  const code = await runAgentCli('codex', ['install', ...argv], io);
+  if (code !== 0) return code;
+
+  const result = ensurePlannotatorInstalled({
+    dryRun: argv.includes('--dry-run'),
+    io,
+    spawnSyncImpl: io?.spawnSyncImpl,
+    platform: io?.platform,
+  });
+  return result.ok ? 0 : 1;
 }

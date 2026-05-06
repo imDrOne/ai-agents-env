@@ -78,6 +78,30 @@ test('claude-env setup builds dry-run install and plugin flow from prompt answer
   );
 });
 
+test('claude-env setup checks plannotator when selected plugin needs it', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-setup-plannotator-'));
+  const prompts = fakePrompts([
+    path.join(root, '.claude'),
+    ['plugins'],
+    true,
+    ['plannotator@plannotator'],
+  ]);
+  const lines = [];
+
+  const code = await claudeMain(['setup'], {
+    out: message => lines.push(message),
+    err: message => lines.push(message),
+    prompts,
+    spawnSyncImpl: () => ({ status: 1, stdout: '', stderr: '' }),
+    platform: 'darwin',
+  });
+
+  assert.equal(code, 0);
+  assert.match(lines.join('\n'), /would install plugin: plannotator@plannotator/);
+  assert.match(lines.join('\n'), /would install plannotator via https:\/\/plannotator\.ai\/install\.sh/);
+  assert.equal(fs.existsSync(path.join(root, '.claude')), false);
+});
+
 test('codex-env setup can dry-run install plus skills sync', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-setup-'));
   const cacheRoot = path.join(root, 'cache');
@@ -99,10 +123,13 @@ test('codex-env setup can dry-run install plus skills sync', async () => {
     out: message => lines.push(message),
     err: message => lines.push(message),
     prompts,
+    spawnSyncImpl: () => ({ status: 1, stdout: '', stderr: '' }),
+    platform: 'darwin',
   });
 
   assert.equal(code, 0);
   assert.match(lines.join('\n'), /ensure directory .*\.codex/);
+  assert.match(lines.join('\n'), /would install plannotator via https:\/\/plannotator\.ai\/install\.sh/);
   assert.match(lines.join('\n'), /would copy skill caveman/);
   assert.equal(fs.existsSync(path.join(root, '.codex')), false);
   assert.equal(fs.existsSync(path.join(agentsHome, 'skills', 'caveman')), false);
@@ -153,12 +180,15 @@ test('dashboard setup orchestrates dry-run install from prompt answers', async (
     err: message => lines.push(message),
     prompts,
     serenaCommand: '/Users/test/.local/bin/serena',
+    spawnSyncImpl: () => ({ status: 1, stdout: '', stderr: '' }),
+    platform: 'darwin',
   });
 
   assert.equal(code, 0);
   assert.match(lines.join('\n'), /Claude install plan/);
   assert.match(lines.join('\n'), /Codex install plan/);
   assert.match(lines.join('\n'), /would configure Codex Serena MCP/);
+  assert.match(lines.join('\n'), /would install plannotator via https:\/\/plannotator\.ai\/install\.sh/);
   assert.doesNotMatch(lines.join('\n'), /would configure Claude Serena MCP/);
   assert.equal(fs.existsSync(path.join(root, '.claude')), false);
   assert.equal(fs.existsSync(path.join(root, '.codex')), false);
@@ -187,11 +217,14 @@ test('dashboard install dry-run does not create homes', async () => {
       out: message => lines.push(message),
       err: message => lines.push(message),
       serenaCommand: '/Users/test/.local/bin/serena',
+      spawnSyncImpl: () => ({ status: 1, stdout: '', stderr: '' }),
+      platform: 'darwin',
     },
   );
 
   assert.equal(code, 0);
   assert.match(lines.join('\n'), /would configure Codex Serena MCP/);
+  assert.match(lines.join('\n'), /would install plannotator via https:\/\/plannotator\.ai\/install\.sh/);
   assert.doesNotMatch(lines.join('\n'), /would configure Claude Serena MCP/);
   assert.equal(fs.existsSync(path.join(root, '.claude')), false);
   assert.equal(fs.existsSync(path.join(root, '.codex')), false);

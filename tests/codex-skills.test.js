@@ -18,8 +18,9 @@ function writeManifest() {
   fs.writeFileSync(
     manifestFile,
     [
-      '# <skill-name> <marketplace>/<plugin>',
+      '# <destination|*> <marketplace>/<plugin> <source-skill|*>',
       '* claude-plugins-official/superpowers *',
+      'plannotator-compound plannotator/plannotator plannotator-compound',
       '',
       'caveman caveman/caveman caveman',
       '',
@@ -57,6 +58,12 @@ test('readCodexSkillManifest parses skill mappings', () => {
       sourceSkill: '*',
     },
     {
+      destination: 'plannotator-compound',
+      marketplace: 'plannotator',
+      plugin: 'plannotator',
+      sourceSkill: 'plannotator-compound',
+    },
+    {
       destination: 'caveman',
       marketplace: 'caveman',
       plugin: 'caveman',
@@ -90,6 +97,24 @@ test('createCodexSkillSyncPlan selects newest concrete child skill directories',
   assert.equal(brainstorming.target, path.join(agentsHome, 'skills', 'brainstorming'));
   assert.ok(caveman);
   assert.equal(caveman.kind, 'missingSkillSource');
+});
+
+test('createCodexSkillSyncPlan includes plannotator compound skill from plugin cache', () => {
+  const { manifestFile, dir } = writeManifest();
+  const cacheRoot = path.join(dir, 'cache');
+  const agentsHome = path.join(dir, 'agents');
+  createMultiSkillCache(cacheRoot, 'plannotator', 'plannotator', 'v1', ['plannotator-compound']);
+
+  const plan = createCodexSkillSyncPlan({ manifestFile, cacheRoot, agentsHome });
+  const plannotator = plan.operations.find(op => op.skillName === 'plannotator-compound');
+
+  assert.ok(plannotator);
+  assert.equal(plannotator.kind, 'copySkill');
+  assert.match(plannotator.source, /plannotator\/plannotator\/v1\/skills\/plannotator-compound$/);
+  assert.equal(
+    plannotator.target,
+    path.join(agentsHome, 'skills', 'plannotator-compound'),
+  );
 });
 
 test('syncCodexSkills dry-run does not write target skills', () => {

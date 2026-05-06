@@ -288,8 +288,9 @@ function ProjectPanel({ addLog }) {
 }
 
 function SoundsPanel({ addLog }) {
-  const [form, setForm] = React.useState({ agent: 'codex', event: 'agent_turn_complete', soundNames: '' });
+  const [form, setForm] = React.useState({ agent: 'codex', event: 'agent_turn_complete', soundName: '' });
   const [settings, setSettings] = React.useState(null);
+  const soundNames = (settings?.sounds ?? []).map(sound => sound.name);
 
   const load = React.useCallback(() => {
     API.get(`/api/sounds?agent=${form.agent}`).then(setSettings).catch(error => addLog('Sounds failed', { error: String(error) }));
@@ -299,15 +300,21 @@ function SoundsPanel({ addLog }) {
     load();
   }, [load]);
 
+  React.useEffect(() => {
+    if (!soundNames.length || soundNames.includes(form.soundName)) return;
+    setForm(current => ({ ...current, soundName: soundNames[0] }));
+  }, [form.soundName, soundNames]);
+
   async function upload(file) {
     if (!file) return;
     const contentBase64 = await fileToBase64(file);
     const result = await API.post('/api/sounds/upload', {
       agent: form.agent,
+      assignEvent: form.event,
       fileName: file.name,
       contentBase64,
     });
-    addLog('Sound uploaded', result);
+    addLog('Sound uploaded and assigned', result);
     load();
   }
 
@@ -316,14 +323,31 @@ function SoundsPanel({ addLog }) {
       <FormGrid>
         <SelectInput label="Agent" value={form.agent} onChange={agent => setForm({ ...form, agent })} options={['claude', 'codex']} />
         <SelectInput label="Event" value={form.event} onChange={event => setForm({ ...form, event })} options={settings?.events ?? []} />
-        <TextInput label="Sound names" value={form.soundNames} onChange={soundNames => setForm({ ...form, soundNames })} placeholder="done.wav, ping.mp3" />
+        {soundNames.length > 0 ? (
+          <SelectInput label="Existing sound" value={form.soundName} onChange={soundName => setForm({ ...form, soundName })} options={soundNames} />
+        ) : null}
         <label className="field">
           Upload audio
-          <input type="file" accept=".mp3,.wav,.ogg,.m4a,.flac" onChange={event => upload(event.target.files?.[0])} />
+          <input
+            type="file"
+            accept=".mp3,.wav,.ogg,.m4a,.flac"
+            onChange={event => {
+              void upload(event.target.files?.[0]).catch(error =>
+                addLog('Sound upload failed', { error: String(error) }),
+              );
+              event.currentTarget.value = '';
+            }}
+          />
         </label>
       </FormGrid>
       <div className="buttonRow">
-        <button onClick={() => runAndLog('Assign sounds', () => API.post('/api/sounds/assign', { ...form, soundNames: splitNames(form.soundNames) }), addLog)} type="button">Assign</button>
+        <button
+          onClick={() => runAndLog('Assign sound', () => API.post('/api/sounds/assign', { ...form, soundNames: [form.soundName] }), addLog)}
+          type="button"
+          disabled={!form.soundName}
+        >
+          Assign selected
+        </button>
         <button onClick={() => runAndLog('Test first sound', () => API.post('/api/sounds/test', { path: settings?.sounds?.[0]?.path }), addLog)} type="button" disabled={!settings?.sounds?.[0]}>Test first</button>
       </div>
       <TagList items={(settings?.sounds ?? []).map(sound => sound.name)} empty="No sounds found" />
@@ -634,10 +658,6 @@ async function request(path, options = {}) {
 
 function cleanEmpty(value) {
   return Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== ''));
-}
-
-function splitNames(value) {
-  return value.split(',').map(item => item.trim()).filter(Boolean);
 }
 
 function fileToBase64(file) {

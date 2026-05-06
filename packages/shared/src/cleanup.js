@@ -24,8 +24,9 @@ const MANAGED_FILE_CONTENT = Object.freeze({
 export function createGlobalCleanupPlan(agentId, options = {}) {
   const agent = AGENT_DEFINITIONS[agentId];
   if (!agent) throw new Error(`Unknown agent: ${agentId}`);
-  const home = options.home ?? process.env[agent.homeEnv] ?? agent.defaultHome();
-  if (options.wipe) return createGlobalWipePlan(agentId, home);
+  const env = options.env ?? process.env;
+  const home = options.home ?? env[agent.homeEnv] ?? agent.defaultHome();
+  if (options.wipe) return createGlobalWipePlan(agentId, home, options);
 
   const installPlan = createInstallPlan(agentId, { home, withSerena: true });
   const operations = [];
@@ -138,15 +139,22 @@ function wipeDir(dirPath) {
   }
 }
 
-function createGlobalWipePlan(agentId, home) {
+function createGlobalWipePlan(agentId, home, options = {}) {
   const safety = validateWipeHome(agentId, home);
+  const operations = safety.ok
+    ? [{ kind: 'wipeDir', path: home }]
+    : [{ kind: 'skip', path: home, reason: safety.reason }];
+
+  if (agentId === 'codex') {
+    const agentsHomeOperation = createAgentsHomeWipeOperation(resolveAgentsHome(options));
+    if (agentsHomeOperation) operations.push(agentsHomeOperation);
+  }
+
   return {
     agent: agentId,
     home,
     destructive: true,
-    operations: safety.ok
-      ? [{ kind: 'wipeDir', path: home }]
-      : [{ kind: 'skip', path: home, reason: safety.reason }],
+    operations,
   };
 }
 
@@ -229,6 +237,38 @@ function validateWipeHome(agentId, home) {
     return { ok: false, reason: `unsafe-home-basename-expected-${expectedBasename}` };
   }
   return { ok: true };
+}
+
+function resolveAgentsHome(options) {
+  const env = options.env ?? process.env;
+  return options.agentsHome ?? env.AGENTS_HOME ?? path.join(os.homedir(), '.agents');
+}
+
+function createAgentsHomeWipeOperation(agentsHome) {
+  const safety = validateAgentsHome(agentsHome);
+  if (!safety.ok) return { kind: 'skip', path: agentsHome, reason: safety.reason };
+  if (!fs.existsSync(agentsHome)) return null;
+  if (!fs.lstatSync(agentsHome).isDirectory()) {
+    return { kind: 'skip', path: agentsHome, reason: 'not-directory' };
+  }
+  return { kind: 'wipeDir', path: agentsHome };
+}
+
+function validateAgentsHome(agentsHome) {
+  const resolved = path.resolve(agentsHome || '');
+  const userHome = path.resolve(os.homedir());
+
+  if (!agentsHome) return { ok: false, reason: 'unsafe-empty-agents-home' };
+  if (resolved === path.parse(resolved).root) return { ok: false, reason: 'unsafe-root-agents-home' };
+  if (resolved === userHome) return { ok: false, reason: 'unsafe-user-agents-home' };
+  if (path.basename(resolved) !== '.agents' && !hasAgentsHomeEvidence(resolved)) {
+    return { ok: false, reason: 'unsafe-agents-home-basename-expected-.agents' };
+  }
+  return { ok: true };
+}
+
+function hasAgentsHomeEvidence(agentsHome) {
+  return fs.existsSync(path.join(agentsHome, 'skills'));
 }
 
 function hasAgentHomeEvidence(agentId, home) {

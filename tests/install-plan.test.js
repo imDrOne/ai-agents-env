@@ -105,6 +105,7 @@ test('agent CLIs expose dry-run install without cross-agent operations', async (
     await codexMain(['install', '--dry-run', '--home', path.join(root, '.codex')], {
       out: message => codexOut.push(message),
       err: message => codexOut.push(message),
+      spawnSyncImpl: () => ({ status: 0, stdout: '/usr/local/bin/plannotator\n', stderr: '' }),
     }),
     0,
   );
@@ -122,6 +123,7 @@ test('codex install with serena writes native MCP config when command is resolve
     out: message => lines.push(message),
     err: message => lines.push(message),
     serenaCommand: '/Users/test/.local/bin/serena',
+    spawnSyncImpl: () => ({ status: 0, stdout: '/usr/local/bin/plannotator\n', stderr: '' }),
   });
 
   assert.equal(code, 0);
@@ -148,5 +150,6 @@ test('claude install with serena dry-run reports native MCP config without invok
 
   assert.equal(code, 0);
   assert.match(lines.join('\n'), /would configure Claude Serena MCP/);
-  assert.deepEqual(calls, []);
+  assert.deepEqual(calls, [['which', ['plannotator']]]);
+  assert.equal(calls.some(([command]) => command === 'claude'), false);
 });

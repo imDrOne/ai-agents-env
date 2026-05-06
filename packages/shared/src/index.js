@@ -78,4 +78,5 @@ export {
   statuslineMain,
   writeStatuslineConfig,
 } from './statusline.js';
+export { ensurePlannotatorInstalled } from './plannotator.js';
 export { configDir, homePath, lstatSafe, writeFileIfChanged, writeJsonFile } from './platform.js';

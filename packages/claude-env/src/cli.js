@@ -180,6 +180,7 @@ async function installCommand(argv, io) {
     dryRun,
     io,
     spawnSyncImpl: io?.spawnSyncImpl,
+    platform: io?.platform,
   });
   return result.ok ? 0 : 1;
 }

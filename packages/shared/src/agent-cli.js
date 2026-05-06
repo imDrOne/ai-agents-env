@@ -400,6 +400,7 @@ function cleanCommand(agentId, argv, io) {
     const plan = createGlobalCleanupPlan(agentId, {
       home: options.values['--home'],
       wipe,
+      env: io?.env,
     });
     io.out(formatCleanupPlan(plan));
     const unsafe = plan.operations.find(

@@ -2,7 +2,11 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
+import { writeJsonFile } from './platform.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_SOUNDS_DIR = path.join(os.homedir(), 'Documents', 'agent-env-sounds');
 const LOG_FILE = path.join(os.tmpdir(), 'agent-env-notify.log');
 export const AUDIO_EXT_RE = /\.(mp3|wav|ogg|m4a|flac)$/i;
@@ -111,6 +115,34 @@ export function playSound(event, cfg, deps = {}) {
   return pick;
 }
 
+export function buildClaudeNotificationHookSettings(options = {}) {
+  const command = options.command ?? resolveClaudeNotifyCommand(options);
+  const stopCommand = options.stopCommand ?? `${command} stop`;
+  return {
+    Notification: [
+      {
+        matcher: 'permission_prompt|idle_prompt',
+        hooks: [{ type: 'command', command }],
+      },
+    ],
+    Stop: [{ hooks: [{ type: 'command', command: stopCommand }] }],
+    SessionStart: [{ hooks: [{ type: 'command', command }] }],
+    SessionEnd: [{ hooks: [{ type: 'command', command }] }],
+  };
+}
+
+export function mergeClaudeNotificationHooks(settingsPath, hookSettings) {
+  const settings = readJson(settingsPath, {});
+  const merged = mergeHookSettings(settings.hooks ?? {}, hookSettings);
+  if (!merged.changed) return { changed: false };
+
+  writeJsonFile(settingsPath, {
+    ...settings,
+    hooks: merged.hooks,
+  });
+  return { changed: true };
+}
+
 export function playSoundFile(filePath, spawnSyncImpl = spawnSync) {
   if (process.platform === 'darwin') {
     spawnSyncImpl('afplay', [filePath], { stdio: 'ignore' });
@@ -216,6 +248,58 @@ function log(message) {
     fs.appendFileSync(LOG_FILE, `${message}\n`, 'utf8');
   } catch {
     // Ignore notification logging failures. Hooks must never block the agent.
+  }
+}
+
+function mergeHookSettings(existingHooks, managedHooks) {
+  let changed = false;
+  const nextHooks = { ...existingHooks };
+
+  for (const [eventName, groups] of Object.entries(managedHooks)) {
+    const currentGroups = Array.isArray(existingHooks[eventName]) ? [...existingHooks[eventName]] : [];
+    for (const group of groups) {
+      if (currentGroups.some(existing => sameHookGroup(existing, group))) continue;
+      currentGroups.push(group);
+      changed = true;
+    }
+    if (currentGroups.length > 0) nextHooks[eventName] = currentGroups;
+  }
+
+  return { hooks: nextHooks, changed };
+}
+
+function sameHookGroup(a, b) {
+  return JSON.stringify(normalizeHookGroup(a)) === JSON.stringify(normalizeHookGroup(b));
+}
+
+function normalizeHookGroup(group) {
+  return {
+    ...(group?.matcher ? { matcher: group.matcher } : {}),
+    hooks: Array.isArray(group?.hooks)
+      ? group.hooks.map(hook => ({
+          ...(hook?.type ? { type: hook.type } : {}),
+          ...(hook?.command ? { command: hook.command } : {}),
+          ...(hook?.timeout ? { timeout: hook.timeout } : {}),
+          ...(hook?.async ? { async: hook.async } : {}),
+        }))
+      : [],
+  };
+}
+
+function resolveClaudeNotifyCommand(options = {}) {
+  const bin = options.binPath ?? path.resolve(__dirname, '..', '..', 'claude-env', 'bin', 'claude-env');
+  return `${shellQuote(process.execPath)} ${shellQuote(bin)} notify`;
+}
+
+function shellQuote(value) {
+  return `"${String(value).replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`;
+}
+
+function readJson(filePath, fallback) {
+  try {
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  } catch {
+    return fallback;
   }
 }
 

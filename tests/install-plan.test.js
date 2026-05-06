@@ -89,6 +89,60 @@ test('claude install plan configures statusline by default and can skip it', () 
   );
 });
 
+test('claude install plan configures notification hooks by default and can skip them', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-env-suite-'));
+  const home = path.join(root, '.claude');
+  const plan = createInstallPlan('claude', { home, dryRun: true });
+  const skipped = createInstallPlan('claude', {
+    home,
+    dryRun: true,
+    withNotifications: false,
+  });
+
+  assert.equal(plan.operations.some(op => op.kind === 'mergeClaudeHooks'), true);
+  assert.equal(skipped.operations.some(op => op.kind === 'mergeClaudeHooks'), false);
+});
+
+test('claude install writes managed notification hooks without removing user hooks', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-env-suite-'));
+  const home = path.join(root, '.claude');
+  fs.mkdirSync(home, { recursive: true });
+  fs.writeFileSync(
+    path.join(home, 'settings.json'),
+    JSON.stringify(
+      {
+        env: { KEEP: '1' },
+        hooks: {
+          Notification: [
+            {
+              matcher: 'auth_success',
+              hooks: [{ type: 'command', command: 'custom-notify' }],
+            },
+          ],
+        },
+      },
+      null,
+      2,
+    ),
+    'utf8',
+  );
+
+  executeInstallPlan(createInstallPlan('claude', { home, withStatusline: false }));
+
+  const settings = JSON.parse(fs.readFileSync(path.join(home, 'settings.json'), 'utf8'));
+  assert.equal(settings.env.KEEP, '1');
+  assert.equal(settings.hooks.Notification.length, 2);
+  assert.deepEqual(settings.hooks.Notification[0], {
+    matcher: 'auth_success',
+    hooks: [{ type: 'command', command: 'custom-notify' }],
+  });
+  assert.match(settings.hooks.Notification[1].hooks[0].command, /claude-env"\s+notify$/);
+  assert.equal(settings.hooks.Notification[1].matcher, 'permission_prompt|idle_prompt');
+  assert.match(settings.hooks.Stop[0].hooks[0].command, /claude-env"\s+notify\s+stop$/);
+  assert.match(settings.hooks.SessionStart[0].hooks[0].command, /claude-env"\s+notify$/);
+  assert.match(settings.hooks.SessionEnd[0].hooks[0].command, /claude-env"\s+notify$/);
+});
+
 test('agent CLIs expose dry-run install without cross-agent operations', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-env-suite-'));
   const claudeOut = [];

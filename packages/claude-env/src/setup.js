@@ -61,6 +61,7 @@ export async function setupCommand(io = defaultIo()) {
     home: home || undefined,
     dryRun,
     withSerena: components.includes('serena'),
+    withNotifications: components.includes('notifications'),
     withStatusline: components.includes('statusline'),
   });
   io.out(formatInstallPlan(plan));

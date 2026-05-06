@@ -3,6 +3,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { writeFileIfChanged, writeJsonFile } from './platform.js';
 import {
+  buildClaudeNotificationHookSettings,
+  mergeClaudeNotificationHooks,
+} from './notify.js';
+import {
   createStatuslineInstallPlan,
   executeStatuslineInstallPlan,
 } from './statusline.js';
@@ -89,6 +93,14 @@ export function createInstallPlan(agentId, options = {}) {
         content: '# Claude Environment\n\nManaged by claude-env.\n',
       },
     );
+    if (options.withNotifications !== false) {
+      operations.push({
+        kind: 'mergeClaudeHooks',
+        path: path.join(home, 'settings.json'),
+        agent: agentId,
+        hooks: buildClaudeNotificationHookSettings(),
+      });
+    }
     if (options.withStatusline !== false) {
       const statuslinePlan = createStatuslineInstallPlan({
         home,
@@ -139,6 +151,7 @@ export function formatInstallPlan(plan) {
       if (op.kind === 'ensureDir') return `ensure directory ${op.path}`;
       if (op.kind === 'writeFile') return `write file ${op.path}`;
       if (op.kind === 'writeJson') return `write json ${op.path}`;
+      if (op.kind === 'mergeClaudeHooks') return `merge Claude hooks into ${op.path}`;
       if (op.kind === 'writeStatuslineConfig') return `write json ${op.path}`;
       if (op.kind === 'mergeClaudeStatusLine') return `merge Claude statusLine into ${op.path}`;
       return `${op.kind} ${op.path ?? ''}`.trim();
@@ -156,6 +169,9 @@ export function executeInstallPlan(plan) {
       if (writeFileIfChanged(op.path, op.content)) changed.push(op.path);
     } else if (op.kind === 'writeJson') {
       if (writeJsonFile(op.path, op.data)) changed.push(op.path);
+    } else if (op.kind === 'mergeClaudeHooks') {
+      const result = mergeClaudeNotificationHooks(op.path, op.hooks);
+      if (result.changed) changed.push(op.path);
     } else if (op.kind === 'writeStatuslineConfig' || op.kind === 'mergeClaudeStatusLine') {
       const result = executeStatuslineInstallPlan({ operations: [op] });
       changed.push(...result.changed);

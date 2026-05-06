@@ -4,11 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import {
-  createGlobalCleanupPlan,
-  executeCleanupPlan,
-  formatCleanupPlan,
-} from '@agent-env/shared';
+import { createGlobalCleanupPlan, executeCleanupPlan, formatCleanupPlan } from '@agent-env/shared';
 import { initProjectProfile, projectProfilePath } from '@agent-env/shared';
 import { main as claudeMain } from '../packages/claude-env/src/cli.js';
 import { main as codexMain } from '../packages/codex-env/src/cli.js';
@@ -40,7 +36,10 @@ test('createGlobalCleanupPlan removes only managed Claude files and empty manage
       ['removeEmptyDir', ''],
     ],
   );
-  assert.equal(plan.operations.find(op => op.path.endsWith('agents')).reason, 'directory-not-empty');
+  assert.equal(
+    plan.operations.find(op => op.path.endsWith('agents')).reason,
+    'directory-not-empty',
+  );
 });
 
 test('executeCleanupPlan respects dry-run and then removes safe files', () => {

@@ -1,5 +1,15 @@
-import { createInstallPlan, executeInstallPlan, formatInstallPlan } from '../../shared/src/index.js';
-import { cancelSetup, ensureInteractive, isPromptCancel, resolvePromptAdapter } from '../../shared/src/prompts.js';
+import {
+  configureSerenaForAgent,
+  createInstallPlan,
+  executeInstallPlan,
+  formatInstallPlan,
+} from '../../shared/src/index.js';
+import {
+  cancelSetup,
+  ensureInteractive,
+  isPromptCancel,
+  resolvePromptAdapter,
+} from '../../shared/src/prompts.js';
 import { syncCodexSkills } from './skills.js';
 
 const COMPONENTS = [
@@ -59,6 +69,19 @@ export async function setupCommand(io = defaultIo()) {
   });
   io.out(formatInstallPlan(plan));
   if (!dryRun) executeInstallPlan(plan);
+
+  if (components.includes('serena')) {
+    const serena = configureSerenaForAgent('codex', {
+      home: plan.home,
+      dryRun,
+      io,
+      env: io?.env,
+      spawnSyncImpl: io?.spawnSyncImpl,
+      existsSyncImpl: io?.existsSyncImpl,
+      serenaCommand: io?.serenaCommand,
+    });
+    if (!serena.ok) return 1;
+  }
 
   if (components.includes('skills')) {
     const result = syncCodexSkills({

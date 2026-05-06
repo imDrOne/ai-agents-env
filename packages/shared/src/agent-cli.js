@@ -1,8 +1,5 @@
-import {
-  createInstallPlan,
-  executeInstallPlan,
-  formatInstallPlan,
-} from './install-plan.js';
+import { createInstallPlan, executeInstallPlan, formatInstallPlan } from './install-plan.js';
+import { configureSerenaForAgent } from './serena.js';
 import {
   createGlobalCleanupPlan,
   createProjectCleanupPlan,
@@ -23,7 +20,7 @@ import {
   updateAgentSoundDir,
 } from './sounds.js';
 
-export async function runAgentCli(agentId, argv, io = defaultIo()) {
+export async function runAgentCli(agentId, argv, io = defaultIo(), options = {}) {
   const [command = 'help', ...rest] = argv;
 
   try {
@@ -33,15 +30,19 @@ export async function runAgentCli(agentId, argv, io = defaultIo()) {
     if (command === 'sound') return soundCommand(agentId, rest, io);
     if (command === 'sound-add') return soundCommand(agentId, ['add', ...rest], io);
     if (command === 'status') {
+      if (isHelpArgs(rest)) {
+        printStatusHelp(agentId, io);
+        return 0;
+      }
       io.out(JSON.stringify({ agent: agentId, ok: true }, null, 2));
       return 0;
     }
     if (command === 'help' || command === '--help' || command === '-h') {
-      printHelp(agentId, io);
+      printAgentHelp(agentId, io, options);
       return 0;
     }
     io.err(`Unknown command: ${command}`);
-    printHelp(agentId, io);
+    printAgentHelp(agentId, io, options);
     return 64;
   } catch (error) {
     io.err(error instanceof Error ? error.message : String(error));
@@ -51,6 +52,10 @@ export async function runAgentCli(agentId, argv, io = defaultIo()) {
 
 async function soundCommand(agentId, argv, io) {
   const [subcommand = 'help', ...rest] = argv;
+  if (subcommand === 'help' || subcommand === '--help' || subcommand === '-h') {
+    printSoundHelp(agentId, io);
+    return 0;
+  }
   if (subcommand === 'add') return soundAddCommand(agentId, rest, io);
   if (subcommand === 'assign') return soundAssignCommand(agentId, rest, io);
   if (subcommand === 'list') return soundListCommand(agentId, rest, io);
@@ -64,7 +69,9 @@ async function soundAddCommand(agentId, argv, io) {
     value: new Set(['--home', '--sound-dir']),
   });
   if (options.positional.length === 0) {
-    io.err(`Usage: ${agentId}-env sound add <file-or-directory...> [--assign] [--sound-dir <path>] [--home <path>]`);
+    io.err(
+      `Usage: ${agentId}-env sound add <file-or-directory...> [--assign] [--sound-dir <path>] [--home <path>]`,
+    );
     return 64;
   }
 
@@ -96,7 +103,9 @@ async function soundAddCommand(agentId, argv, io) {
     message: 'Assign added sound(s) to an event now?',
     initialValue: true,
   });
-  if (isPromptCancel(prompts, shouldAssign)) return cancelSetup(prompts, 'Sound assignment cancelled.');
+  if (isPromptCancel(prompts, shouldAssign)) {
+    return cancelSetup(prompts, 'Sound assignment cancelled.');
+  }
   if (!shouldAssign) return 0;
 
   return soundAssignInteractive(agentId, io, {
@@ -155,11 +164,13 @@ async function soundAssignInteractive(agentId, io, options = {}) {
     env: io.env,
   });
   if (settings.sounds.length === 0) {
-    io.err(`No sounds found in ${settings.soundsDir}. Add one with '${agentId}-env sound add <path>'.`);
+    io.err(
+      `No sounds found in ${settings.soundsDir}. Add one with '${agentId}-env sound add <path>'.`,
+    );
     return 1;
   }
 
-  let event = options.event;
+  let { event } = options;
   if (!event) {
     event = await prompts.select({
       message: 'Event',
@@ -176,7 +187,9 @@ async function soundAssignInteractive(agentId, io, options = {}) {
     options: settings.sounds.map(file => ({ value: file.name, label: file.name })),
     initialValues,
   });
-  if (isPromptCancel(prompts, soundNames)) return cancelSetup(prompts, 'Sound assignment cancelled.');
+  if (isPromptCancel(prompts, soundNames)) {
+    return cancelSetup(prompts, 'Sound assignment cancelled.');
+  }
   if (!Array.isArray(soundNames) || soundNames.length === 0) {
     io.err('Select at least one sound.');
     return 1;
@@ -192,26 +205,50 @@ async function soundAssignInteractive(agentId, io, options = {}) {
 }
 
 function installCommand(agentId, argv, io) {
+  if (isHelpArgs(argv)) {
+    printInstallHelp(agentId, io);
+    return 0;
+  }
   const options = parseCommonOptions(argv, {
-    boolean: new Set(['--with-serena', '--dry-run']),
+    boolean: new Set(['--with-serena', '--dry-run', '--no-statusline', '--statusline-force']),
     value: new Set(['--home']),
   });
   const plan = createInstallPlan(agentId, {
     withSerena: Boolean(options.flags['--with-serena']),
     dryRun: Boolean(options.flags['--dry-run']),
     home: options.values['--home'],
+    withStatusline: agentId === 'claude' ? !options.flags['--no-statusline'] : undefined,
+    statuslineForce: Boolean(options.flags['--statusline-force']),
   });
 
   io.out(formatInstallPlan(plan));
-  if (plan.dryRun) return 0;
+  let changed = [];
+  if (!plan.dryRun) {
+    changed = executeInstallPlan(plan);
+    io.out(`Applied ${changed.length} operation(s).`);
+  }
 
-  const changed = executeInstallPlan(plan);
-  io.out(`Applied ${changed.length} operation(s).`);
+  if (plan.withSerena) {
+    const serena = configureSerenaForAgent(agentId, {
+      home: plan.home,
+      dryRun: plan.dryRun,
+      io,
+      env: io?.env,
+      spawnSyncImpl: io?.spawnSyncImpl,
+      existsSyncImpl: io?.existsSyncImpl,
+      serenaCommand: io?.serenaCommand,
+    });
+    if (!serena.ok) return 1;
+  }
   return 0;
 }
 
 function projectCommand(agentId, argv, io) {
   const [subcommand = 'help', ...rest] = argv;
+  if (subcommand === 'help' || subcommand === '--help' || subcommand === '-h') {
+    printProjectHelp(agentId, io);
+    return 0;
+  }
   if (subcommand === 'setup') return projectSetupCommand(agentId, rest, io);
   if (subcommand === 'status') {
     const options = parseProjectOptions(rest);
@@ -232,7 +269,9 @@ function projectCommand(agentId, argv, io) {
     const { positional, ...options } = parseProjectOptions(rest);
     const [type, name] = positional;
     if (!type || !name) {
-      io.err(`Usage: ${agentId}-env project ${subcommand} <plugin|skill|hook|instruction> <name> [--local|--tracked] [--project <path>] [--dry-run]`);
+      io.err(
+        `Usage: ${agentId}-env project ${subcommand} <plugin|skill|hook|instruction> <name> [--local|--tracked] [--project <path>] [--dry-run]`,
+      );
       return 64;
     }
     const change = {
@@ -246,7 +285,9 @@ function projectCommand(agentId, argv, io) {
       return 0;
     }
     const result = applyProjectFeatureChange(agentId, options.projectPath, change);
-    io.out(`${subcommand === 'enable' ? 'Enabled' : 'Disabled'} ${result.change.type}.${name} in ${result.scope} profile: ${result.path}`);
+    io.out(
+      `${subcommand === 'enable' ? 'Enabled' : 'Disabled'} ${result.change.type}.${name} in ${result.scope} profile: ${result.path}`,
+    );
     return 0;
   }
   printProjectHelp(agentId, io);
@@ -264,10 +305,12 @@ async function projectSetupCommand(agentId, argv, io) {
   const prompts = resolvePromptAdapter(io);
   prompts.intro?.(`${agentId}-env project setup`);
 
-  const projectPath = parsed.values['--project'] ?? await prompts.text({
-    message: 'Project directory',
-    defaultValue: process.cwd(),
-  });
+  const projectPath =
+    parsed.values['--project'] ??
+    (await prompts.text({
+      message: 'Project directory',
+      defaultValue: process.cwd(),
+    }));
   if (isPromptCancel(prompts, projectPath)) return cancelSetup(prompts);
 
   const scope = await prompts.select({
@@ -295,10 +338,12 @@ async function projectSetupCommand(agentId, argv, io) {
   });
   if (isPromptCancel(prompts, enable)) return cancelSetup(prompts);
 
-  const dryRun = parsed.flags['--dry-run'] || await prompts.confirm({
-    message: 'Run as dry-run first?',
-    initialValue: true,
-  });
+  const dryRun =
+    parsed.flags['--dry-run'] ||
+    (await prompts.confirm({
+      message: 'Run as dry-run first?',
+      initialValue: true,
+    }));
   if (isPromptCancel(prompts, dryRun)) return cancelSetup(prompts);
 
   const changes = [
@@ -308,7 +353,9 @@ async function projectSetupCommand(agentId, argv, io) {
 
   if (dryRun) {
     for (const change of changes) {
-      io.out(`would ${change.enabled ? 'enable' : 'disable'} ${change.feature} in ${scope} profile for ${projectPath}`);
+      io.out(
+        `would ${change.enabled ? 'enable' : 'disable'} ${change.feature} in ${scope} profile for ${projectPath}`,
+      );
     }
     prompts.outro?.('Project setup dry-run complete.');
     return 0;
@@ -323,7 +370,9 @@ async function projectSetupCommand(agentId, argv, io) {
       name: nameParts.join('.'),
       enabled: change.enabled,
     });
-    io.out(`${change.enabled ? 'Enabled' : 'Disabled'} ${result.change.type}.${result.change.name} in ${result.scope} profile: ${result.path}`);
+    io.out(
+      `${change.enabled ? 'Enabled' : 'Disabled'} ${result.change.type}.${result.change.name} in ${result.scope} profile: ${result.path}`,
+    );
   }
   prompts.outro?.('Project setup complete.');
   return 0;
@@ -331,6 +380,10 @@ async function projectSetupCommand(agentId, argv, io) {
 
 function cleanCommand(agentId, argv, io) {
   const [target = 'help', ...rest] = argv;
+  if (target === 'help' || target === '--help' || target === '-h') {
+    printCleanHelp(agentId, io);
+    return 0;
+  }
   if (target === 'global') {
     const options = parseCommonOptions(rest, {
       boolean: new Set(['--dry-run', '--wipe', '--confirm-wipe']),
@@ -339,7 +392,9 @@ function cleanCommand(agentId, argv, io) {
     const dryRun = Boolean(options.flags['--dry-run']);
     const wipe = Boolean(options.flags['--wipe']);
     if (wipe && !dryRun && !options.flags['--confirm-wipe']) {
-      io.err(`Destructive global wipe requires --confirm-wipe. Run '${agentId}-env clean global --wipe --dry-run' first.`);
+      io.err(
+        `Destructive global wipe requires --confirm-wipe. Run '${agentId}-env clean global --wipe --dry-run' first.`,
+      );
       return 1;
     }
     const plan = createGlobalCleanupPlan(agentId, {
@@ -347,13 +402,17 @@ function cleanCommand(agentId, argv, io) {
       wipe,
     });
     io.out(formatCleanupPlan(plan));
-    const unsafe = plan.operations.find(op => op.kind === 'skip' && String(op.reason ?? '').startsWith('unsafe-'));
+    const unsafe = plan.operations.find(
+      op => op.kind === 'skip' && String(op.reason ?? '').startsWith('unsafe-'),
+    );
     if (unsafe) {
       io.err(`Refusing to wipe unsafe home: ${unsafe.path} (${unsafe.reason})`);
       return 1;
     }
     const result = executeCleanupPlan(plan, { dryRun });
-    if (!result.dryRun) io.out(`Removed ${result.removed.length} item(s). Skipped ${result.skipped.length} item(s).`);
+    if (!result.dryRun) {
+      io.out(`Removed ${result.removed.length} item(s). Skipped ${result.skipped.length} item(s).`);
+    }
     return 0;
   }
 
@@ -365,17 +424,13 @@ function cleanCommand(agentId, argv, io) {
     });
     io.out(formatCleanupPlan(plan));
     const result = executeCleanupPlan(plan, { dryRun: options.dryRun });
-    if (!result.dryRun) io.out(`Removed ${result.removed.length} item(s). Skipped ${result.skipped.length} item(s).`);
+    if (!result.dryRun) {
+      io.out(`Removed ${result.removed.length} item(s). Skipped ${result.skipped.length} item(s).`);
+    }
     return 0;
   }
 
-  io.out(
-    [
-      `Usage: ${agentId}-env clean global [--dry-run] [--home <path>]`,
-      `       ${agentId}-env clean global --wipe [--dry-run|--confirm-wipe] [--home <path>]`,
-      `       ${agentId}-env clean project [--local|--tracked|--all] [--dry-run] [--project <path>]`,
-    ].join('\n'),
-  );
+  printCleanHelp(agentId, io);
   return 0;
 }
 
@@ -430,7 +485,9 @@ function formatSoundSettings(settings) {
     lines.push('  (none)');
   } else {
     for (const [event, sounds] of assigned) {
-      lines.push(`  ${event}: ${Array.isArray(sounds) && sounds.length > 0 ? sounds.join(', ') : '(none)'}`);
+      lines.push(
+        `  ${event}: ${Array.isArray(sounds) && sounds.length > 0 ? sounds.join(', ') : '(none)'}`,
+      );
     }
   }
   return lines.join('\n');
@@ -473,48 +530,124 @@ function parseCommonOptions(argv, spec) {
   return { flags, values, positional };
 }
 
-function printHelp(agentId, io) {
+export function formatAgentHelp(agentId, options = {}) {
   const bin = `${agentId}-env`;
-  io.out(
-    [
-      `Usage: ${bin} <command>`,
-      '',
-      'Commands:',
-      `  ${bin} install [--with-serena] [--dry-run] [--home <path>]`,
-      `  ${bin} project status [--project <path>]`,
-      `  ${bin} project setup [--project <path>] [--dry-run]`,
-      `  ${bin} project init [--local|--tracked] [--project <path>]`,
-      `  ${bin} project list`,
-      `  ${bin} project enable <plugin|skill|hook|instruction> <name> [--local|--tracked]`,
-      `  ${bin} project disable <plugin|skill|hook|instruction> <name> [--local|--tracked]`,
-      `  ${bin} sound add <file-or-directory...> [--assign] [--sound-dir <path>]`,
-      `  ${bin} sound assign [event] [sound...]`,
-      `  ${bin} sound list`,
-      `  ${bin} sound-add <file-or-directory...>`,
-      `  ${bin} clean global [--dry-run] [--home <path>]`,
-      `  ${bin} clean global --wipe [--dry-run|--confirm-wipe] [--home <path>]`,
-      `  ${bin} clean project [--local|--tracked|--all] [--dry-run] [--project <path>]`,
-    ].join('\n'),
-  );
+  const extraCommands = options.extraCommands ?? [];
+  return [
+    `Usage: ${bin} <command>`,
+    '',
+    'Commands:',
+    ...extraCommands.map(command => `  ${bin} ${command}`),
+    `  ${bin} install [--with-serena] [--dry-run] [--home <path>]${
+      agentId === 'claude' ? ' [--skip-plugins] [--no-statusline] [--statusline-force]' : ''
+    }`,
+    `  ${bin} status`,
+    `  ${bin} project status [--project <path>]`,
+    `  ${bin} project setup [--project <path>] [--dry-run]`,
+    `  ${bin} project init [--local|--tracked] [--project <path>]`,
+    `  ${bin} project list`,
+    `  ${bin} project enable <plugin|skill|hook|instruction> <name> [--local|--tracked]`,
+    `  ${bin} project disable <plugin|skill|hook|instruction> <name> [--local|--tracked]`,
+    `  ${bin} sound add <file-or-directory...> [--assign] [--sound-dir <path>]`,
+    `  ${bin} sound assign [event] [sound...]`,
+    `  ${bin} sound list`,
+    `  ${bin} sound-add <file-or-directory...>`,
+    `  ${bin} clean global [--dry-run] [--home <path>]`,
+    `  ${bin} clean global --wipe [--dry-run|--confirm-wipe] [--home <path>]`,
+    `  ${bin} clean project [--local|--tracked|--all] [--dry-run] [--project <path>]`,
+    '',
+    `Run '${bin} <command> --help' for command-specific usage.`,
+  ].join('\n');
+}
+
+function printAgentHelp(agentId, io, options = {}) {
+  io.out(formatAgentHelp(agentId, options));
+}
+
+export function formatInstallHelp(agentId) {
+  const bin = `${agentId}-env`;
+  const claudeOptions =
+    agentId === 'claude'
+      ? ' [--skip-plugins] [--no-statusline] [--statusline-force] [--plugins-file <path>] [--marketplaces-file <path>]'
+      : '';
+  return [
+    `Usage: ${bin} install [options]`,
+    '',
+    'Options:',
+    `  ${bin} install [--with-serena] [--dry-run] [--home <path>]${claudeOptions}`,
+  ].join('\n');
+}
+
+export function formatProjectHelp(agentId) {
+  const bin = `${agentId}-env`;
+  return [
+    `Usage: ${bin} project <command>`,
+    '',
+    'Commands:',
+    `  ${bin} project status [--project <path>]`,
+    `  ${bin} project setup [--project <path>] [--dry-run]`,
+    `  ${bin} project init [--local|--tracked] [--project <path>]`,
+    `  ${bin} project list`,
+    `  ${bin} project enable <plugin|skill|hook|instruction> <name> [--local|--tracked] [--project <path>] [--dry-run]`,
+    `  ${bin} project disable <plugin|skill|hook|instruction> <name> [--local|--tracked] [--project <path>] [--dry-run]`,
+  ].join('\n');
 }
 
 function printProjectHelp(agentId, io) {
-  io.out(`Run '${agentId}-env help' for project command usage.`);
+  io.out(formatProjectHelp(agentId));
+}
+
+function printInstallHelp(agentId, io) {
+  io.out(formatInstallHelp(agentId));
+}
+
+export function formatSoundHelp(agentId) {
+  const bin = `${agentId}-env`;
+  return [
+    `Usage: ${bin} sound <command>`,
+    '',
+    'Commands:',
+    `  ${bin} sound add <file-or-directory...> [--assign] [--sound-dir <path>] [--home <path>]`,
+    `  ${bin} sound assign [event] [sound...] [--sound-dir <path>] [--home <path>]`,
+    `  ${bin} sound list [--sound-dir <path>] [--home <path>]`,
+    `  ${bin} sound-add <file-or-directory...>`,
+  ].join('\n');
 }
 
 function printSoundHelp(agentId, io) {
+  io.out(formatSoundHelp(agentId));
+}
+
+export function formatCleanHelp(agentId) {
   const bin = `${agentId}-env`;
-  io.out(
-    [
-      `Usage: ${bin} sound <command>`,
-      '',
-      'Commands:',
-      `  ${bin} sound add <file-or-directory...> [--assign] [--sound-dir <path>] [--home <path>]`,
-      `  ${bin} sound assign [event] [sound...] [--sound-dir <path>] [--home <path>]`,
-      `  ${bin} sound list [--sound-dir <path>] [--home <path>]`,
-      `  ${bin} sound-add <file-or-directory...>`,
-    ].join('\n'),
+  return [
+    `Usage: ${bin} clean <target>`,
+    '',
+    'Commands:',
+    `  ${bin} clean global [--dry-run] [--home <path>]`,
+    `  ${bin} clean global --wipe [--dry-run|--confirm-wipe] [--home <path>]`,
+    `  ${bin} clean project [--local|--tracked|--all] [--dry-run] [--project <path>]`,
+  ].join('\n');
+}
+
+function printCleanHelp(agentId, io) {
+  io.out(formatCleanHelp(agentId));
+}
+
+export function formatStatusHelp(agentId) {
+  const bin = `${agentId}-env`;
+  return [`Usage: ${bin} status`, '', 'Show a minimal JSON health check for this agent CLI.'].join(
+    '\n',
   );
+}
+
+function printStatusHelp(agentId, io) {
+  io.out(formatStatusHelp(agentId));
+}
+
+function isHelpArgs(argv) {
+  const [arg] = argv;
+  return arg === 'help' || arg === '--help' || arg === '-h';
 }
 
 function defaultIo() {

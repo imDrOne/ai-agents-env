@@ -10,7 +10,14 @@ const MANAGED_FILE_CONTENT = Object.freeze({
   },
   codex: {
     'AGENTS.md': '# Codex Environment\n\nManaged by codex-env.\n',
-    'config.toml': ['model = "gpt-5.4"', 'model_reasoning_effort = "high"', '', '[features]', 'multi_agent = true', ''].join('\n'),
+    'config.toml': [
+      'model = "gpt-5.4"',
+      'model_reasoning_effort = "high"',
+      '',
+      '[features]',
+      'multi_agent = true',
+      '',
+    ].join('\n'),
   },
 });
 
@@ -52,8 +59,12 @@ export function createProjectCleanupPlan(agentId, options = {}) {
 
   for (const dirName of ['.agent-env.local', '.agent-env']) {
     const dirPath = path.join(projectPath, dirName);
-    if (scopes.includes('local') && dirName === '.agent-env.local') operations.push(classifyDirCleanupOperation(dirPath));
-    if (scopes.includes('tracked') && dirName === '.agent-env') operations.push(classifyDirCleanupOperation(dirPath));
+    if (scopes.includes('local') && dirName === '.agent-env.local') {
+      operations.push(classifyDirCleanupOperation(dirPath));
+    }
+    if (scopes.includes('tracked') && dirName === '.agent-env') {
+      operations.push(classifyDirCleanupOperation(dirPath));
+    }
   }
 
   return { agent: agentId, projectPath, operations };
@@ -94,7 +105,11 @@ export function executeCleanupPlan(plan, options = {}) {
         fs.rmdirSync(op.path);
         removed.push(op.path);
       } else {
-        skipped.push({ ...op, kind: 'skip', reason: fs.existsSync(op.path) ? 'directory-not-empty' : 'missing' });
+        skipped.push({
+          ...op,
+          kind: 'skip',
+          reason: fs.existsSync(op.path) ? 'directory-not-empty' : 'missing',
+        });
       }
     }
   }
@@ -118,7 +133,12 @@ function classifyGlobalCleanupOperation(agentId, home, op) {
   if (op.kind === 'ensureDir') return classifyDirCleanupOperation(op.path);
   if (op.kind === 'writeFile') return classifyManagedTextFile(agentId, home, op.path);
   if (op.kind === 'writeJson') return classifyManagedJsonFile(agentId, op.path);
-  if (op.kind === 'serenaWiring') return classifyManagedJsonFile(agentId, op.path);
+  if (op.kind === 'writeStatuslineConfig') return classifyManagedJsonFile(agentId, op.path);
+  if (op.kind === 'mergeClaudeStatusLine') {
+    return fs.existsSync(op.path)
+      ? { kind: 'skip', path: op.path, reason: 'partial-managed-file' }
+      : { kind: 'skip', path: op.path, reason: 'missing' };
+  }
   return { kind: 'skip', path: op.path, reason: 'unsupported-operation' };
 }
 
@@ -126,7 +146,9 @@ function classifyManagedTextFile(agentId, home, filePath) {
   if (!fs.existsSync(filePath)) return { kind: 'skip', path: filePath, reason: 'missing' };
   const rel = path.relative(home, filePath);
   const expected = MANAGED_FILE_CONTENT[agentId]?.[rel];
-  if (expected === undefined) return { kind: 'skip', path: filePath, reason: 'unknown-managed-file' };
+  if (expected === undefined) {
+    return { kind: 'skip', path: filePath, reason: 'unknown-managed-file' };
+  }
   const actual = fs.readFileSync(filePath, 'utf8');
   return actual === expected
     ? { kind: 'removeFile', path: filePath }
@@ -149,7 +171,9 @@ function classifyManagedJsonFile(agentId, filePath) {
 
 function classifyDirCleanupOperation(dirPath) {
   if (!fs.existsSync(dirPath)) return { kind: 'skip', path: dirPath, reason: 'missing' };
-  if (!fs.lstatSync(dirPath).isDirectory()) return { kind: 'skip', path: dirPath, reason: 'not-directory' };
+  if (!fs.lstatSync(dirPath).isDirectory()) {
+    return { kind: 'skip', path: dirPath, reason: 'not-directory' };
+  }
   return {
     kind: 'removeEmptyDir',
     path: dirPath,
@@ -158,7 +182,11 @@ function classifyDirCleanupOperation(dirPath) {
 }
 
 function isExistingEmptyDir(dirPath) {
-  return fs.existsSync(dirPath) && fs.lstatSync(dirPath).isDirectory() && fs.readdirSync(dirPath).length === 0;
+  return (
+    fs.existsSync(dirPath) &&
+    fs.lstatSync(dirPath).isDirectory() &&
+    fs.readdirSync(dirPath).length === 0
+  );
 }
 
 function cleanupOrder(operation, home) {
@@ -183,8 +211,9 @@ function validateWipeHome(agentId, home) {
 }
 
 function hasAgentHomeEvidence(agentId, home) {
-  const evidence = agentId === 'claude'
-    ? ['claude-env.json', 'CLAUDE.md', 'commands', 'hooks', 'agents']
-    : ['codex-env.json', 'AGENTS.md', 'config.toml', 'rules'];
+  const evidence =
+    agentId === 'claude'
+      ? ['claude-env.json', 'CLAUDE.md', 'commands', 'hooks', 'agents']
+      : ['codex-env.json', 'AGENTS.md', 'config.toml', 'rules'];
   return evidence.some(name => fs.existsSync(path.join(home, name)));
 }

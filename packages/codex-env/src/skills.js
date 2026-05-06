@@ -66,9 +66,13 @@ export function syncCodexSkills(options = {}) {
   if (options.dryRun) {
     for (const operation of plan.operations) {
       if (operation.kind === 'copySkill') {
-        options.io?.out?.(`  [dry-run] would copy skill ${operation.skillName}: ${operation.target} <- ${operation.source}`);
+        options.io?.out?.(
+          `  [dry-run] would copy skill ${operation.skillName}: ${operation.target} <- ${operation.source}`,
+        );
       } else {
-        options.io?.out?.(`  [dry-run] missing skill source for ${operation.destination}: ${operation.cachePath}`);
+        options.io?.out?.(
+          `  [dry-run] missing skill source for ${operation.destination}: ${operation.cachePath}`,
+        );
       }
     }
     return { ok: true, dryRun: true, copied: 0, missing: countMissing(plan) };

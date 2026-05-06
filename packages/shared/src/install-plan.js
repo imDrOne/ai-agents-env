@@ -2,6 +2,10 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { writeFileIfChanged, writeJsonFile } from './platform.js';
+import {
+  createStatuslineInstallPlan,
+  executeStatuslineInstallPlan,
+} from './statusline.js';
 
 export const AGENT_DEFINITIONS = Object.freeze({
   claude: {
@@ -85,6 +89,16 @@ export function createInstallPlan(agentId, options = {}) {
         content: '# Claude Environment\n\nManaged by claude-env.\n',
       },
     );
+    if (options.withStatusline !== false) {
+      const statuslinePlan = createStatuslineInstallPlan({
+        home,
+        dryRun: options.dryRun,
+        force: options.statuslineForce,
+        command: options.statuslineCommand,
+        config: options.statuslineConfig,
+      });
+      operations.push(...statuslinePlan.operations.filter(op => op.kind !== 'ensureDir'));
+    }
   } else if (agentId === 'codex') {
     operations.push(
       { kind: 'ensureDir', path: path.join(home, 'rules'), agent: agentId },
@@ -110,20 +124,6 @@ export function createInstallPlan(agentId, options = {}) {
     );
   }
 
-  if (options.withSerena) {
-    operations.push({
-      kind: 'serenaWiring',
-      agent: agentId,
-      path: path.join(home, 'serena.mcp.json'),
-      data: {
-        version: 1,
-        agent: agentId,
-        enabled: true,
-        note: 'Agent-specific Serena MCP wiring placeholder. Use the agent utility to render the final native MCP config.',
-      },
-    });
-  }
-
   return {
     agent: agentId,
     home,
@@ -139,7 +139,8 @@ export function formatInstallPlan(plan) {
       if (op.kind === 'ensureDir') return `ensure directory ${op.path}`;
       if (op.kind === 'writeFile') return `write file ${op.path}`;
       if (op.kind === 'writeJson') return `write json ${op.path}`;
-      if (op.kind === 'serenaWiring') return `configure ${op.agent} Serena wiring ${op.path}`;
+      if (op.kind === 'writeStatuslineConfig') return `write json ${op.path}`;
+      if (op.kind === 'mergeClaudeStatusLine') return `merge Claude statusLine into ${op.path}`;
       return `${op.kind} ${op.path ?? ''}`.trim();
     })
     .join('\n');
@@ -153,8 +154,11 @@ export function executeInstallPlan(plan) {
       changed.push(op.path);
     } else if (op.kind === 'writeFile') {
       if (writeFileIfChanged(op.path, op.content)) changed.push(op.path);
-    } else if (op.kind === 'writeJson' || op.kind === 'serenaWiring') {
+    } else if (op.kind === 'writeJson') {
       if (writeJsonFile(op.path, op.data)) changed.push(op.path);
+    } else if (op.kind === 'writeStatuslineConfig' || op.kind === 'mergeClaudeStatusLine') {
+      const result = executeStatuslineInstallPlan({ operations: [op] });
+      changed.push(...result.changed);
     } else {
       throw new Error(`Unsupported install operation: ${op.kind}`);
     }

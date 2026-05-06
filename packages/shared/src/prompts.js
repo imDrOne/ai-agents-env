@@ -21,7 +21,9 @@ export function ensureInteractive(io = {}) {
   if (io.prompts) return { ok: true };
   const isTTY = io.isTTY ?? process.stdin.isTTY;
   if (!isTTY) {
-    io.err?.('Interactive setup requires an interactive terminal. Use non-interactive install/project flags instead.');
+    io.err?.(
+      'Interactive setup requires an interactive terminal. Use non-interactive install/project flags instead.',
+    );
     return { ok: false };
   }
   return { ok: true };

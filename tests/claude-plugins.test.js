@@ -64,7 +64,14 @@ test('createClaudePluginPlan adds marketplaces before plugins', () => {
 
   assert.deepEqual(
     plan.operations.map(op => op.kind),
-    ['addMarketplace', 'addMarketplace', 'addMarketplace', 'installPlugin', 'installPlugin', 'installPlugin'],
+    [
+      'addMarketplace',
+      'addMarketplace',
+      'addMarketplace',
+      'installPlugin',
+      'installPlugin',
+      'installPlugin',
+    ],
   );
   assert.equal(plan.operations[0].repo, 'anthropics/claude-plugins-official');
   assert.equal(plan.operations[3].plugin, 'frontend-design@claude-plugins-official');

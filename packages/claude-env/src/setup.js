@@ -1,10 +1,21 @@
-import { createInstallPlan, executeInstallPlan, formatInstallPlan } from '../../shared/src/index.js';
-import { cancelSetup, ensureInteractive, isPromptCancel, resolvePromptAdapter } from '../../shared/src/prompts.js';
+import {
+  configureSerenaForAgent,
+  createInstallPlan,
+  executeInstallPlan,
+  formatInstallPlan,
+} from '../../shared/src/index.js';
+import {
+  cancelSetup,
+  ensureInteractive,
+  isPromptCancel,
+  resolvePromptAdapter,
+} from '../../shared/src/prompts.js';
 import { installClaudePlugins, readClaudePluginManifest } from './plugins.js';
 
 const COMPONENTS = [
   { value: 'plugins', label: 'Claude plugins' },
   { value: 'notifications', label: 'Notification hooks' },
+  { value: 'statusline', label: 'Claude statusline' },
   { value: 'serena', label: 'Serena MCP wiring' },
 ];
 
@@ -25,7 +36,7 @@ export async function setupCommand(io = defaultIo()) {
   const components = await prompts.multiselect({
     message: 'Select Claude components',
     options: COMPONENTS,
-    initialValues: ['plugins', 'notifications'],
+    initialValues: ['plugins', 'notifications', 'statusline'],
   });
   if (isPromptCancel(prompts, components)) return cancelSetup(prompts);
 
@@ -50,9 +61,23 @@ export async function setupCommand(io = defaultIo()) {
     home: home || undefined,
     dryRun,
     withSerena: components.includes('serena'),
+    withStatusline: components.includes('statusline'),
   });
   io.out(formatInstallPlan(plan));
   if (!dryRun) executeInstallPlan(plan);
+
+  if (components.includes('serena')) {
+    const serena = configureSerenaForAgent('claude', {
+      home: plan.home,
+      dryRun,
+      io,
+      env: io?.env,
+      spawnSyncImpl: io?.spawnSyncImpl,
+      existsSyncImpl: io?.existsSyncImpl,
+      serenaCommand: io?.serenaCommand,
+    });
+    if (!serena.ok) return 1;
+  }
 
   if (components.includes('plugins')) {
     const result = installClaudePlugins({

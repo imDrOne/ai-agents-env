@@ -85,11 +85,10 @@ export function installClaudePlugins({
 
   for (const operation of plan.operations) {
     if (operation.kind === 'addMarketplace') {
-      const result = spawnSyncImpl(
-        'claude',
-        ['plugin', 'marketplace', 'add', operation.repo],
-        { encoding: 'utf8', stdio: 'pipe' },
-      );
+      const result = spawnSyncImpl('claude', ['plugin', 'marketplace', 'add', operation.repo], {
+        encoding: 'utf8',
+        stdio: 'pipe',
+      });
       const detail = firstOutputLine(result);
       if (result.status === 0) {
         summary.marketplacesAdded += 1;

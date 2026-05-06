@@ -4,10 +4,12 @@ export async function runCacCommand(name, argv, configure, io = defaultIo()) {
   const cli = cac(name);
   let exitCode = 0;
 
-  const run = handler => async (...args) => {
-    const result = await handler(...args);
-    exitCode = typeof result === 'number' ? result : 0;
-  };
+  const run =
+    handler =>
+    async (...args) => {
+      const result = await handler(...args);
+      exitCode = typeof result === 'number' ? result : 0;
+    };
 
   configure(cli, run);
 

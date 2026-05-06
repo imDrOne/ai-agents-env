@@ -167,7 +167,7 @@ export async function notifyMain(argv, deps = {}) {
     return 0;
   }
 
-  const raw = argv[0] ?? await readStdinFn();
+  const raw = argv[0] ?? (await readStdinFn());
   if (!raw || !raw.trim()) return 0;
 
   let payload;

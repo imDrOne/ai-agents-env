@@ -38,7 +38,16 @@ function fakePrompts(answers) {
 
 test('createClackPromptAdapter exposes required prompt methods', () => {
   const adapter = createClackPromptAdapter();
-  for (const method of ['intro', 'outro', 'cancel', 'isCancel', 'text', 'confirm', 'select', 'multiselect']) {
+  for (const method of [
+    'intro',
+    'outro',
+    'cancel',
+    'isCancel',
+    'text',
+    'confirm',
+    'select',
+    'multiselect',
+  ]) {
     assert.equal(typeof adapter[method], 'function');
   }
 });
@@ -112,7 +121,10 @@ test('setup cancellation exits with 130 and does not mutate files', async () => 
 
   assert.equal(code, 130);
   assert.equal(fs.existsSync(path.join(root, '.claude')), false);
-  assert.deepEqual(prompts.calls.map(call => call[0]), ['intro', 'text', 'cancel']);
+  assert.deepEqual(
+    prompts.calls.map(call => call[0]),
+    ['intro', 'text', 'cancel'],
+  );
 });
 
 test('non-interactive setup refuses without prompt adapter or TTY', async () => {
@@ -127,15 +139,73 @@ test('non-interactive setup refuses without prompt adapter or TTY', async () => 
   assert.match(lines.join('\n'), /requires an interactive terminal/);
 });
 
-test('dashboard setup remains facade-only', async () => {
+test('dashboard setup orchestrates dry-run install from prompt answers', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dashboard-setup-'));
+  const prompts = fakePrompts([
+    path.join(root, '.claude'),
+    path.join(root, '.codex'),
+    'codex',
+    true,
+  ]);
   const lines = [];
   const code = await dashboardMain(['setup'], {
     out: message => lines.push(message),
     err: message => lines.push(message),
+    prompts,
+    serenaCommand: '/Users/test/.local/bin/serena',
   });
 
   assert.equal(code, 0);
-  assert.match(lines.join('\n'), /facade-only/);
+  assert.match(lines.join('\n'), /Claude install plan/);
+  assert.match(lines.join('\n'), /Codex install plan/);
+  assert.match(lines.join('\n'), /would configure Codex Serena MCP/);
+  assert.doesNotMatch(lines.join('\n'), /would configure Claude Serena MCP/);
+  assert.equal(fs.existsSync(path.join(root, '.claude')), false);
+  assert.equal(fs.existsSync(path.join(root, '.codex')), false);
+  assert.deepEqual(
+    prompts.calls.map(call => call[0]),
+    ['intro', 'text', 'text', 'select', 'confirm', 'outro'],
+  );
+});
+
+test('dashboard install dry-run does not create homes', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dashboard-install-'));
+  const lines = [];
+
+  const code = await dashboardMain(
+    [
+      'install',
+      '--dry-run',
+      '--claude-home',
+      path.join(root, '.claude'),
+      '--codex-home',
+      path.join(root, '.codex'),
+      '--serena-clients',
+      'codex',
+    ],
+    {
+      out: message => lines.push(message),
+      err: message => lines.push(message),
+      serenaCommand: '/Users/test/.local/bin/serena',
+    },
+  );
+
+  assert.equal(code, 0);
+  assert.match(lines.join('\n'), /would configure Codex Serena MCP/);
+  assert.doesNotMatch(lines.join('\n'), /would configure Claude Serena MCP/);
+  assert.equal(fs.existsSync(path.join(root, '.claude')), false);
+  assert.equal(fs.existsSync(path.join(root, '.codex')), false);
+});
+
+test('dashboard install rejects invalid serena client selection', async () => {
+  const lines = [];
+  const code = await dashboardMain(['install', '--serena-clients', 'bad'], {
+    out: message => lines.push(message),
+    err: message => lines.push(message),
+  });
+
+  assert.equal(code, 64);
+  assert.match(lines.join('\n'), /Invalid Serena client selection/);
 });
 
 test('claude-env project setup writes local project overrides interactively', async () => {
@@ -155,7 +225,9 @@ test('claude-env project setup writes local project overrides interactively', as
   });
 
   assert.equal(code, 0);
-  const profile = JSON.parse(fs.readFileSync(path.join(project, '.agent-env.local', 'claude.json'), 'utf8'));
+  const profile = JSON.parse(
+    fs.readFileSync(path.join(project, '.agent-env.local', 'claude.json'), 'utf8'),
+  );
   assert.equal(profile.features.plugins.superpowers, false);
   assert.equal(profile.features.plugins.playwright, true);
   assert.deepEqual(
@@ -166,13 +238,7 @@ test('claude-env project setup writes local project overrides interactively', as
 
 test('codex-env project setup dry-run does not write profile', async () => {
   const project = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-project-setup-'));
-  const prompts = fakePrompts([
-    project,
-    'tracked',
-    ['skills.personal-workflow'],
-    [],
-    true,
-  ]);
+  const prompts = fakePrompts([project, 'tracked', ['skills.personal-workflow'], [], true]);
   const lines = [];
 
   const code = await codexMain(['project', 'setup'], {

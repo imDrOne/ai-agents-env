@@ -69,7 +69,9 @@ test('createCodexSkillSyncPlan selects newest concrete child skill directories',
   const { manifestFile, dir } = writeManifest();
   const cacheRoot = path.join(dir, 'cache');
   const agentsHome = path.join(dir, 'agents');
-  createMultiSkillCache(cacheRoot, 'claude-plugins-official', 'superpowers', '001-old', ['brainstorming']);
+  createMultiSkillCache(cacheRoot, 'claude-plugins-official', 'superpowers', '001-old', [
+    'brainstorming',
+  ]);
   createMultiSkillCache(cacheRoot, 'claude-plugins-official', 'superpowers', '003-new', [
     'brainstorming',
     'written-plan',
@@ -121,7 +123,10 @@ test('executeCodexSkillSyncPlan copies concrete skill directories', () => {
 
   assert.equal(result.copied, 1);
   assert.equal(fs.existsSync(path.join(agentsHome, 'skills', 'caveman', 'SKILL.md')), true);
-  assert.equal(fs.readFileSync(path.join(agentsHome, 'skills', 'caveman', 'SKILL.md'), 'utf8'), '# caveman v1\n');
+  assert.equal(
+    fs.readFileSync(path.join(agentsHome, 'skills', 'caveman', 'SKILL.md'), 'utf8'),
+    '# caveman v1\n',
+  );
 });
 
 test('codex-env skills sync command supports dry-run', async () => {

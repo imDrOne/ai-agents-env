@@ -1,14 +1,41 @@
 {
   "name": "agent-env-suite",
   "version": "0.1.0",
-  "private": true,
   "type": "module",
-  "description": "Independent Claude/Codex environment utilities with an optional dashboard facade",
+  "description": "Claude Code and Codex environment utilities with a shared dashboard orchestrator",
+  "bin": {
+    "agent-env-suite": "bin/agent-env-suite",
+    "claude-env": "packages/claude-env/bin/claude-env",
+    "codex-env": "packages/codex-env/bin/codex-env",
+    "agent-env-dashboard": "packages/dashboard/bin/agent-env-dashboard"
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "packages/",
+    "packages/dashboard/web/dist/",
+    "README.md"
+  ],
+  "keywords": [
+    "codex",
+    "claude-code",
+    "agents",
+    "mcp",
+    "serena"
+  ],
   "workspaces": [
     "packages/*"
   ],
   "scripts": {
-    "check": "node --check packages/shared/src/*.js packages/claude-env/src/*.js packages/codex-env/src/*.js packages/dashboard/src/*.js packages/claude-env/bin/claude-env packages/codex-env/bin/codex-env packages/dashboard/bin/agent-env-dashboard",
+    "check": "node --check src/*.js packages/shared/src/*.js packages/claude-env/src/*.js packages/codex-env/src/*.js packages/dashboard/src/*.js packages/dashboard/web/vite.config.js bin/agent-env-suite packages/claude-env/bin/claude-env packages/codex-env/bin/codex-env packages/dashboard/bin/agent-env-dashboard",
+    "lint": "eslint src/*.js packages/*/src/**/*.js packages/dashboard/web/src/**/*.jsx packages/dashboard/web/vite.config.js bin/agent-env-suite packages/claude-env/bin/claude-env packages/codex-env/bin/codex-env packages/dashboard/bin/agent-env-dashboard tests/**/*.js",
+    "lint:fix": "eslint src/*.js packages/*/src/**/*.js packages/dashboard/web/src/**/*.jsx packages/dashboard/web/vite.config.js bin/agent-env-suite packages/claude-env/bin/claude-env packages/codex-env/bin/codex-env packages/dashboard/bin/agent-env-dashboard tests/**/*.js --fix",
+    "format": "prettier --write src/*.js packages/*/src/**/*.js packages/dashboard/web/src/**/*.jsx packages/dashboard/web/src/**/*.css packages/dashboard/web/vite.config.js packages/dashboard/web/index.html bin/agent-env-suite packages/*/bin/* tests/**/*.js eslint.config.js package.json",
+    "format:check": "prettier --check src/*.js packages/*/src/**/*.js packages/dashboard/web/src/**/*.jsx packages/dashboard/web/src/**/*.css packages/dashboard/web/vite.config.js packages/dashboard/web/index.html bin/agent-env-suite packages/*/bin/* tests/**/*.js eslint.config.js package.json",
+    "build:web": "vite build --config packages/dashboard/web/vite.config.js",
+    "dev:web": "vite --config packages/dashboard/web/vite.config.js",
+    "ui": "node packages/dashboard/bin/agent-env-dashboard ui",
+    "pack:check": "npm run test && npm pack --dry-run",
     "test": "npm run check && node --test tests/*.test.js"
   },
   "engines": {
@@ -18,5 +45,16 @@
   "dependencies": {
     "@clack/prompts": "^1.2.0",
     "cac": "^6.7.14"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "@eslint/js": "^9.39.4",
+    "eslint": "^9.39.4",
+    "eslint-config-prettier": "^10.1.8",
+    "lucide-react": "^0.562.0",
+    "prettier": "^3.8.3",
+    "react": "^19.2.3",
+    "react-dom": "^19.2.3",
+    "vite": "^6.4.2"
   }
 }

@@ -59,7 +59,10 @@ export function addSoundsToLibrary(sources, options = {}) {
     }
 
     const files = stat.isDirectory()
-      ? fs.readdirSync(sourcePath).sort().map(name => path.join(sourcePath, name))
+      ? fs
+          .readdirSync(sourcePath)
+          .sort()
+          .map(name => path.join(sourcePath, name))
       : [sourcePath];
 
     for (const filePath of files) {
@@ -142,7 +145,9 @@ export function validateAgentEvent(agentId, event) {
   requireAgent(agentId);
   const events = AGENT_SOUND_EVENTS[agentId] ?? SUPPORTED_EVENTS;
   if (!events.includes(event)) {
-    throw new Error(`Unsupported ${agentId} event: ${event}. Supported events: ${events.join(', ')}`);
+    throw new Error(
+      `Unsupported ${agentId} event: ${event}. Supported events: ${events.join(', ')}`,
+    );
   }
 }
 

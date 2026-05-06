@@ -1,0 +1,8 @@
+node_modules/
+draft/
+coverage/
+*.sh
+*.toml
+*.tmpl
+*.md
+install-manifest.txt

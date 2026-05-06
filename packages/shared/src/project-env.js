@@ -4,7 +4,16 @@ import { AGENT_DEFINITIONS } from './install-plan.js';
 import { writeJsonFile } from './platform.js';
 
 const CONFIG_VERSION = 1;
-const FEATURE_TYPES = new Set(['plugin', 'plugins', 'skill', 'skills', 'hook', 'hooks', 'instruction', 'instructions']);
+const FEATURE_TYPES = new Set([
+  'plugin',
+  'plugins',
+  'skill',
+  'skills',
+  'hook',
+  'hooks',
+  'instruction',
+  'instructions',
+]);
 
 function normalizeFeatureType(type) {
   if (!FEATURE_TYPES.has(type)) throw new Error(`Unsupported feature type: ${type}`);
@@ -80,7 +89,7 @@ export function applyProjectFeatureChange(agentId, projectPath, change) {
   const scope = change.scope ?? 'local';
   const enabled = Boolean(change.enabled);
   const featureType = normalizeFeatureType(change.type);
-  const name = change.name;
+  const { name } = change;
   if (!name) throw new Error('Feature name is required');
 
   const { path: filePath, profile } = readProjectProfile(agentId, projectPath, scope);

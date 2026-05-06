@@ -167,6 +167,36 @@ test('agent clean global wipe removes full agent home when confirmed', async () 
   assert.equal(fs.existsSync(path.join(claudeHome, 'CLAUDE.md')), true);
 });
 
+test('executeCleanupPlan reports wipe ENOTEMPTY as skipped instead of throwing', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cleanup-wipe-race-'));
+  const home = path.join(root, '.codex');
+  writeFile(path.join(home, 'logs_2.sqlite'), 'busy\n');
+  const plan = createGlobalCleanupPlan('codex', { home, wipe: true });
+  const originalRmSync = fs.rmSync;
+
+  try {
+    fs.rmSync = filePath => {
+      if (filePath === home) {
+        const error = new Error('Directory not empty');
+        error.code = 'ENOTEMPTY';
+        throw error;
+      }
+      originalRmSync(filePath, { recursive: true, force: true });
+    };
+
+    const result = executeCleanupPlan(plan);
+
+    assert.equal(result.removed.length, 0);
+    assert.deepEqual(
+      result.skipped.map(op => [op.path, op.reason]),
+      [[home, 'enotempty']],
+    );
+  } finally {
+    fs.rmSync = originalRmSync;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('agent clean global wipe allows custom homes with agent evidence', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cleanup-cli-'));
   const home = path.join(root, 'custom-codex-home');

@@ -98,8 +98,12 @@ export function executeCleanupPlan(plan, options = {}) {
       fs.rmSync(op.path, { force: true });
       removed.push(op.path);
     } else if (op.kind === 'wipeDir') {
-      fs.rmSync(op.path, { recursive: true, force: true });
-      removed.push(op.path);
+      const result = wipeDir(op.path);
+      if (result.ok) {
+        removed.push(op.path);
+      } else {
+        skipped.push({ ...op, kind: 'skip', reason: result.reason });
+      }
     } else if (op.kind === 'removeEmptyDir') {
       if (isExistingEmptyDir(op.path)) {
         fs.rmdirSync(op.path);
@@ -115,6 +119,23 @@ export function executeCleanupPlan(plan, options = {}) {
   }
 
   return { ok: true, dryRun, removed, skipped };
+}
+
+function wipeDir(dirPath) {
+  try {
+    fs.rmSync(dirPath, {
+      recursive: true,
+      force: true,
+      maxRetries: 5,
+      retryDelay: 100,
+    });
+    return fs.existsSync(dirPath)
+      ? { ok: false, reason: 'directory-not-empty' }
+      : { ok: true };
+  } catch (error) {
+    const code = error?.code ? String(error.code).toLowerCase() : 'remove-failed';
+    return { ok: false, reason: code };
+  }
 }
 
 function createGlobalWipePlan(agentId, home) {
